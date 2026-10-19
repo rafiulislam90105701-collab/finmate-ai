@@ -14,6 +14,10 @@ export function isValidEmailOtp(value: string) {
   return /^\d{6}$/.test(value);
 }
 
+export function getSignupEmailOtpParams(email: string, token: string) {
+  return { email: email.trim(), token, type: "email" } as const;
+}
+
 export function remainingResendSeconds(lastSentAt: number | null, now = Date.now(), cooldownSeconds = SIGNUP_RESEND_COOLDOWN_SECONDS) {
   if (lastSentAt === null || !Number.isFinite(lastSentAt)) return 0;
   return Math.max(0, Math.ceil((lastSentAt + cooldownSeconds * 1000 - now) / 1000));
@@ -25,14 +29,24 @@ export function isEmailConfirmed(user: VerifiableUser) {
   return Boolean(user?.email_confirmed_at);
 }
 
-export function getSignupNextStep(sessionAvailable: boolean, user: VerifiableUser): "workspace" | "confirm-email" {
-  return sessionAvailable && isEmailConfirmed(user) ? "workspace" : "confirm-email";
+export function isSignupEmailConfirmationDisabled(sessionAvailable: boolean, user: VerifiableUser) {
+  return sessionAvailable || isEmailConfirmed(user);
 }
 
 export function getSafeAuthErrorMessage(error: unknown, flow: AuthFlow) {
   const message = error instanceof Error ? error.message.toLowerCase() : "";
-  if (/rate limit|too many requests|email rate|over_email_send_rate_limit/.test(message)) {
-    return "For your security, wait a little before trying again.";
+  const code = typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code?: unknown }).code ?? "").toLowerCase()
+    : "";
+  const providerError = `${code} ${message}`;
+  if (/over_email_send_rate_limit|over_request_rate_limit|over_email_rate_limit|too_many_requests/.test(providerError) || /rate limit|too many requests|email rate/.test(message)) {
+    return "Email requests are temporarily rate limited. Wait at least a minute before trying again. If this keeps happening, the project owner should review the Supabase email provider limits.";
+  }
+  if (/email_address_not_authorized/.test(providerError)) {
+    return "The project email provider did not accept this address. Please try again later; the project owner may need to verify the email provider and sender settings.";
+  }
+  if (/network|fetch failed|failed to fetch|load failed/.test(message)) {
+    return "A network problem interrupted this request. Check your connection and try again.";
   }
   if (flow === "verify") return "That six-digit code is invalid or expired. Request a new code and try again.";
   if (flow === "resend") return "We couldn't request another verification code right now. Wait a moment and try again.";
@@ -42,6 +56,6 @@ export function getSafeAuthErrorMessage(error: unknown, flow: AuthFlow) {
   if (flow === "sign-in" && /email not confirmed|email_not_confirmed/.test(message)) return "Please verify your email with the six-digit code we sent. You can request another code if needed.";
   if (flow === "reset") return "We couldn't start the password reset. Please try again shortly.";
   if (flow === "update") return "Your password couldn't be updated. Choose a stronger password and try again.";
-  if (flow === "sign-up") return "We couldn't start the account. Check the details and try again.";
+  if (flow === "sign-up") return "We couldn't complete signup. If you may already have an account, sign in or use Forgot password; otherwise check your details and try again.";
   return "We couldn't verify those sign-in details. Check your email and password, or reset your password.";
 }

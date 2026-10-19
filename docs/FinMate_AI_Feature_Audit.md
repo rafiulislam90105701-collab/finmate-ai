@@ -1,16 +1,16 @@
 # FinMate AI Feature Audit
 
-**Audit date:** 18 October 2026
+**Audit baseline:** 18 October 2026; production follow-up 19 October 2026
 **Scope:** Source review, local project configuration, prior verified production deployment review, and live fictional-demo navigation check. No production data was changed for this audit.
 
 ## Audit basis
 
-- Repository: `main` branch, latest reviewed commit `ede6851` (`Keep fictional demo accessible with cloud auth`).
+- Repository: private Rafiul repository `rafiulislam90105701-collab/finmate-ai`; production `main` is merge commit `123a4a251777d3f0340673c8fe4ade8d55adae75`.
 - Framework: Next.js 15 App Router, TypeScript, React, Supabase client/SSR, Vitest, and Vercel configuration.
 - Package manager: pnpm 11.25.0.
-- Verified public URL: https://finmate-ai-iota.vercel.app/
+- Current verified public URL: https://finmate-ai-one.vercel.app/
 - Source files reviewed include `app/`, `components/dashboard.tsx`, `lib/`, `supabase/migrations/`, `supabase/functions/finance-assistant/`, `next.config.ts`, `vercel.json`, `README.md`, and `DEPLOYMENT.md`.
-- Current local checks: lint passed, TypeScript typecheck passed, Vitest passed **8/8**, and `pnpm build` passed. The previously verified Vercel production deployment was observed as **Ready**; the changes described below have not yet been deployed during this audit.
+- Latest source checks on `b32af340a326ac2b0de282ebe9221b8379a7d449` (the same source tree as production `main`): **34/34 tests**, lint, typecheck, `git diff --check`, and production build passed. GitHub reports the Vercel deployment for the merged `main` commit completed, and the public production URL was loaded in a browser.
 
 ## Status legend
 
@@ -66,7 +66,16 @@ Inside the workspace, the section navigation is client-side and URL-synchronised
 4. **No custom domain documented.** The verified Vercel domain is the public URL currently recorded here.
 5. **PWA device installation should be accepted as browser-dependent.** Manifest/service-worker support is present, but exact install wording varies by browser and operating system.
 
-## Change control for this audit
+## 19 October production follow-up
 
-- Current local source changes improve question-specific assistant fallbacks, bounded conversation context, duplicate-submit protection, URL-synchronised workspace navigation, cloud-session recovery behavior, mobile navigation coverage, and original SVG PWA branding assets.
-- Documentation and matching PDFs were added or refreshed. No database migration, Supabase setting, Vercel setting, Git remote, deployment, or production financial data was changed during this audit.
+- The live landing page, `/app?demo=1`, and `/auth?mode=sign-up` loaded over HTTPS. The demo visibly marks its figures **FICTIONAL DEMO**. Signup opens the intended form; no account was created during this check.
+- The source signup flow calls Supabase `signUp`, verifies with `verifyOtp({ email, token, type: "email" })`, and the repository's confirmation template uses `{{ .Token }}`. This confirms code/template agreement in the repository, not the hosted SMTP setting or real delivery.
+- The Supabase connector lists only project `ahgbbmefuagafjxandqa` in the connected account. Its expected migrations are recorded, all eight public finance tables have RLS enabled, and their policies bind rows to `auth.uid()` and require confirmed email. `finance-assistant` v10 and `finance-action` v1 are active with JWT verification.
+- The private GitHub inventory for the Rafiul account lists only `finmate-ai`; no E-branded duplicate repository was found. Vercel deployment checks show projects `finmate-ai` and `finmate-ai-78a4` under team slug `finmate3`, both deploying the same Rafiul repository commit. The current browser Vercel session is signed into a different account and receives 404 for that team, so project ownership and whether either is the E-branded duplicate could not be re-verified. Neither project was disconnected or deleted.
+- A previously documented secondary deployment URL serves an older signup CTA, while the current production URL serves the corrected sign-in/signup navigation. It is not treated as a production target. No resource was deleted because its Vercel owner and relationship to the duplicate could not be verified.
+- No successful real OTP inbox delivery, two-user isolation attempt, or live financial mutation was performed. Financial-action tests use isolated in-memory stores; no production financial data was changed. Supabase's security advisor still warns that leaked-password protection is disabled.
+
+## Change control for the 18 October baseline audit
+
+- The 18 October baseline source changes improved question-specific assistant fallbacks, bounded conversation context, duplicate-submit protection, URL-synchronised workspace navigation, cloud-session recovery behavior, mobile navigation coverage, and original SVG PWA branding assets.
+- That baseline also added documentation and matching PDFs. The 19 October production follow-up above records subsequent deployment and cloud checks.
