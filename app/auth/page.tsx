@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { AUTH_DRAFT_MAX_AGE_MS, authModeQueryValue, clearPendingAuthValue, getInitialAuthMode, getRecoveryEmailOtpParams, getSafeAuthErrorMessage, getSignupEmailOtpParams, isEmailConfirmed, isSignupEmailConfirmationDisabled, isValidEmailOtp, readAuthDraft, readPendingAuthValue, remainingResendSeconds, SIGNUP_RESEND_COOLDOWN_SECONDS, writeAuthDraft, writePendingAuthValue } from "@/lib/auth-validation";
+import { AUTH_DRAFT_MAX_AGE_MS, authModeQueryValue, clearPendingAuthValue, getInitialAuthMode, getRecoveryEmailOtpParams, getSafeAuthErrorMessage, getSignupEmailOtpParams, isEmailConfirmed, isSignupEmailConfirmationDisabled, isValidEmailOtp, persistVerificationDraft, readAuthDraft, readPendingAuthValue, remainingResendSeconds, SIGNUP_RESEND_COOLDOWN_SECONDS, writeAuthDraft, writePendingAuthValue } from "@/lib/auth-validation";
 import { getSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase";
 
 type Mode = "sign-in" | "sign-up" | "verify" | "verify-recovery" | "complete" | "reset" | "update-password";
@@ -62,7 +62,7 @@ export default function AuthPage() {
       } else if (pendingEmail && !pendingSince) {
         writePendingAuthValue(PENDING_SINCE, String(Date.now()), localStorage, sessionStorage);
       }
-      const savedEmail = draft?.email || pendingEmail || "";
+      const savedEmail = pendingEmail || draft?.email || "";
       const initialMode = getInitialAuthMode(params.get("error") === "callback" ? "sign-in" : params.get("mode"), Boolean(pendingEmail), draft?.mode);
       const restoredUrl = new URL(window.location.href);
       restoredUrl.searchParams.set("mode", authModeQueryValue(initialMode));
@@ -175,9 +175,8 @@ export default function AuthPage() {
           tell("Email confirmation is not enabled for this Supabase project. Ask the project owner to enable Confirm Email before creating accounts.", "error");
           return;
         }
-        writePendingAuthValue(PENDING_EMAIL, email.trim(), localStorage, sessionStorage);
-        writePendingAuthValue(PENDING_SINCE, String(Date.now()), localStorage, sessionStorage);
-        writePendingAuthValue(RESEND_SENT_AT, String(Date.now()), localStorage, sessionStorage);
+        const verifiedAt = Date.now();
+        persistVerificationDraft({ pendingEmail: PENDING_EMAIL, pendingSince: PENDING_SINCE, resendSentAt: RESEND_SENT_AT, draft: AUTH_DRAFT }, email, name, verifiedAt, localStorage, sessionStorage);
         setModeInUrl("verify");
         setResendIn(SIGNUP_RESEND_COOLDOWN_SECONDS);
         setMode("verify");

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, BadgeDollarSign, BrainCircuit, CalendarClock, ChartNoAxesCombined, LockKeyhole, PiggyBank, ReceiptText } from "lucide-react";
+import { AuthResumeRedirect } from "@/components/auth-resume-redirect";
 
 const features = [
   { icon: ChartNoAxesCombined, title: "See the full picture", text: "Balances, cash flow, budgets, and forecasts in one calm daily view." },
@@ -12,6 +13,7 @@ const features = [
 
 export default function HomePage() {
   return <main className="app-shell">
+    <AuthResumeRedirect />
     <nav className="landing-nav" aria-label="Primary navigation">
       <Link href="/" className="brand"><span className="brand-mark">F</span>FinMate AI</Link>
       <div className="nav-links"><a href="#features">Features</a><a href="#how-it-works">How it works</a><Link href="/auth?mode=sign-in">Sign in</Link><Link className="button primary" href="/app?demo=1">Explore demo <ArrowRight size={16}/></Link></div>

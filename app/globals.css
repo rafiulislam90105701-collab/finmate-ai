@@ -85,6 +85,7 @@ a { color:inherit; text-decoration:none; }
 .otp-inputs input { width:100%; min-width:0; min-height:clamp(48px,13vw,58px); padding:4px!important; border-radius:13px!important; text-align:center; font-size:clamp(20px,7vw,26px); font-weight:800; font-variant-numeric:tabular-nums; }
 .verify-actions { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
 .verify-actions button { padding:0 4px; border:0; background:transparent; font-size:13px; }
+.auth-resume-link { display:inline-block; margin:0 0 18px; color:#087260; font-weight:700; text-decoration:underline; text-underline-offset:3px; }
 .verified-state { display:grid; justify-items:center; gap:12px; padding:5px 0 13px; text-align:center; color:#406354; }
 .verified-state p { margin:0; }
 .verified-icon { display:grid; width:62px; height:62px; place-items:center; color:#087c68; background:#e2f4ea; border:1px solid #c3e6d2; border-radius:50%; animation:auth-pop .32s ease-out both; }
