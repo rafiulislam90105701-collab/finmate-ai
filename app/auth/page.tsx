@@ -132,7 +132,7 @@ export default function AuthPage() {
     setBusy(true);
     tell("");
     try {
-      const { data, error } = await client.auth.verifyOtp({ email: email.trim(), token: otp, type: "email" });
+      const { data, error } = await client.auth.verifyOtp({ email: email.trim(), token: otp, type: "signup" });
       if (error) throw error;
       if (!data.session || !data.user) {
         tell("The code was accepted, but a sign-in session was not created. Please sign in and try again.", "error");
