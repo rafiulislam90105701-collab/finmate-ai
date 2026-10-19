@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUDGET_STATUS_TOOL_SCHEMA, buildGroqFailureLog, explainFinancialRisk, filterBudgetStatus, parseFinanceToolArguments, simulateBudgetScenario } from "../supabase/functions/_shared/agent-tools";
+import { BUDGET_STATUS_TOOL_SCHEMA, buildDeterministicBudgetStatusAnswer, buildGroqFailureLog, explainFinancialRisk, filterBudgetStatus, parseFinanceToolArguments, simulateBudgetScenario } from "../supabase/functions/_shared/agent-tools";
 import { buildInsights } from "@/lib/insights";
 import { calculateForecast } from "@/lib/finance";
 import type { FinanceState } from "@/types/finance";
@@ -30,6 +30,59 @@ describe("read-only financial assistant tools", () => {
     expect(filterBudgetStatus(budgets, "   ")).toEqual(budgets);
     expect(parseFinanceToolArguments("get_recent_transactions", '{"limit":null}')).toEqual({});
     expect(parseFinanceToolArguments("get_savings_goals", '{"goal_name":null}')).toEqual({});
+  });
+
+
+
+  it("returns a stable no-budget answer without inventing zero-valued allocations", () => {
+    const answer = buildDeterministicBudgetStatusAnswer(
+      "Show me my overall budget status for this month, including all categories.",
+      "2026-10",
+      "USD",
+      ["Food", "Travel"],
+      [],
+    );
+    expect(answer).toContain("October 2026");
+    expect(answer).toContain("No budget categories or limits are set");
+    expect(answer).toContain("does not mean your income or spending is zero");
+    expect(answer).not.toMatch(/0\s*(USD|BDT)/i);
+  });
+
+  it("summarizes existing budget rows consistently and reports budget pressure", () => {
+    const answer = buildDeterministicBudgetStatusAnswer(
+      "Show me my overall budget status for this month, including all categories.",
+      "2026-10",
+      "BDT",
+      ["Food", "Travel"],
+      [
+        { category: "Food", amountMinor: 100000, spentMinor: 25000, unpaidBillsMinor: 15000, remainingMinor: 60000 },
+        { category: "Travel", amountMinor: 50000, spentMinor: 40000, unpaidBillsMinor: 20000, remainingMinor: 0 },
+      ],
+    );
+    expect(answer).toContain("Overall budget status for October 2026");
+    expect(answer).toContain("Total allocated:");
+    expect(answer).toContain("Recorded spending against these budgets:");
+    expect(answer).toContain("Food: allocated");
+    expect(answer).toContain("Travel: allocated");
+    expect(answer).toContain("over limit by");
+  });
+
+  it("reports an unbudgeted named category and leaves budget-change questions to the AI", () => {
+    expect(buildDeterministicBudgetStatusAnswer(
+      "Show me my Travel budget status this month.",
+      "2026-10",
+      "BDT",
+      ["Food", "Travel"],
+      [{ category: "Food", amountMinor: 100000, spentMinor: 0, unpaidBillsMinor: 0, remainingMinor: 100000 }],
+    )).toContain("No budget limit is set for Travel");
+
+    expect(buildDeterministicBudgetStatusAnswer(
+      "How should I change my budget?",
+      "2026-10",
+      "BDT",
+      ["Food"],
+      [],
+    )).toBeNull();
   });
 
   it("records the Groq 400 schema error without exposing arguments or arbitrary message content", () => {
