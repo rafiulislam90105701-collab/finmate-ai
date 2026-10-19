@@ -59,10 +59,35 @@ export function getInitialAuthMode(requestedMode: string | null, hasPendingVerif
   if (requestedMode === "verify-email") return "verify";
   if (requestedMode === "verify-recovery") return "verify-recovery";
   if (requestedMode === "verify") return "verify";
+  // A stale signup URL can survive Android/PWA process recreation while the
+  // durable draft already records that Supabase accepted signup. Explicit
+  // navigation writes a fresh draft, so a saved verify state is safe to prefer.
+  if (requestedMode === "sign-up" && savedMode === "verify") return "verify";
   if (requestedMode === "sign-up" && hasPendingVerification) return "verify";
   if (requestedMode === "sign-up") return "sign-up";
   if (savedMode) return savedMode;
   return hasPendingVerification ? "verify" : "sign-in";
+}
+
+export function shouldResumeVerificationAtRoot(draft: AuthDraft | null, pendingEmail: string | null) {
+  return Boolean(pendingEmail || (draft?.mode === "verify" && draft.email));
+}
+
+/** Persist the resume record synchronously before changing UI state or URL. */
+export function persistVerificationDraft(
+  keys: { pendingEmail: string; pendingSince: string; resendSentAt: string; draft: string },
+  email: string,
+  name: string,
+  now: number,
+  persistent: StorageLike,
+  fallback: StorageLike,
+) {
+  const normalizedEmail = email.trim().slice(0, 320);
+  const savedEmail = writePendingAuthValue(keys.pendingEmail, normalizedEmail, persistent, fallback);
+  writePendingAuthValue(keys.pendingSince, String(now), persistent, fallback);
+  writePendingAuthValue(keys.resendSentAt, String(now), persistent, fallback);
+  const savedDraft = writeAuthDraft(keys.draft, { mode: "verify", email: normalizedEmail, name, updatedAt: now }, persistent, fallback);
+  return savedEmail || savedDraft;
 }
 
 function isResumableMode(value: unknown): value is ResumableAuthMode {

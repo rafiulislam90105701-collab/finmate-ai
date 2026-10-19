@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { authModeQueryValue, clearPendingAuthValue, getInitialAuthMode, getRecoveryEmailOtpParams, getSafeAuthErrorMessage, getSignupEmailOtpParams, isEmailConfirmed, isSignupEmailConfirmationDisabled, isValidEmailOtp, readAuthDraft, readPendingAuthValue, remainingResendSeconds, writeAuthDraft, writePendingAuthValue } from "@/lib/auth-validation";
+import { authModeQueryValue, clearPendingAuthValue, getInitialAuthMode, getRecoveryEmailOtpParams, getSafeAuthErrorMessage, getSignupEmailOtpParams, isEmailConfirmed, isSignupEmailConfirmationDisabled, isValidEmailOtp, persistVerificationDraft, readAuthDraft, readPendingAuthValue, remainingResendSeconds, shouldResumeVerificationAtRoot, writeAuthDraft, writePendingAuthValue } from "@/lib/auth-validation";
 
 function memoryStorage(seed: Record<string, string> = {}) {
   const values = new Map(Object.entries(seed));
@@ -15,6 +15,7 @@ describe("authentication validation", () => {
   it("resumes pending signup verification after the browser reloads", () => {
     expect(getInitialAuthMode("sign-in", true)).toBe("sign-in");
     expect(getInitialAuthMode("sign-up", true)).toBe("verify");
+    expect(getInitialAuthMode("sign-up", false, "verify")).toBe("verify");
     expect(getInitialAuthMode("sign-up", false)).toBe("sign-up");
     expect(getInitialAuthMode(null, true)).toBe("verify");
     expect(getInitialAuthMode("verify-email", false)).toBe("verify");
@@ -48,6 +49,43 @@ describe("authentication validation", () => {
     expect(draft).toEqual({ mode: "sign-up", email: "person@example.com", name: "Fin User", updatedAt: 1000 });
     expect(getInitialAuthMode("sign-up", false, draft?.mode)).toBe("sign-up");
     expect(getInitialAuthMode(null, false, draft?.mode)).toBe("sign-up");
+  });
+
+  it("persists verification state synchronously before UI navigation and restores it in a fresh page", () => {
+    const persistent = memoryStorage();
+    const oldTab = memoryStorage();
+    persistVerificationDraft({ pendingEmail: "pending-email", pendingSince: "pending-since", resendSentAt: "sent-at", draft: "auth-draft" }, " person@example.com ", "Fin User", 2000, persistent, oldTab);
+
+    expect(persistent.getItem("pending-email")).toBe("person@example.com");
+    expect(persistent.getItem("pending-since")).toBe("2000");
+    expect(persistent.getItem("sent-at")).toBe("2000");
+    expect(JSON.parse(persistent.getItem("auth-draft")!)).toEqual({ mode: "verify", email: "person@example.com", name: "Fin User", updatedAt: 2000 });
+
+    const relaunchedTab = memoryStorage();
+    const draft = readAuthDraft("auth-draft", persistent, relaunchedTab, 3000);
+    const pendingEmail = readPendingAuthValue("pending-email", persistent, relaunchedTab);
+    expect(getInitialAuthMode("sign-up", Boolean(pendingEmail), draft?.mode)).toBe("verify");
+    expect(pendingEmail).toBe("person@example.com");
+  });
+
+  it("resumes a PWA root launch only when pending verification metadata is valid", () => {
+    const draft = { mode: "verify" as const, email: "person@example.com", name: "", updatedAt: 2000 };
+    expect(shouldResumeVerificationAtRoot(draft, null)).toBe(true);
+    expect(shouldResumeVerificationAtRoot(null, "person@example.com")).toBe(true);
+    expect(shouldResumeVerificationAtRoot({ ...draft, mode: "sign-up" }, null)).toBe(false);
+    expect(shouldResumeVerificationAtRoot(null, null)).toBe(false);
+  });
+
+  it("lets explicit change-email navigation replace the verification draft", () => {
+    const persistent = memoryStorage();
+    const tab = memoryStorage();
+    persistVerificationDraft({ pendingEmail: "pending-email", pendingSince: "pending-since", resendSentAt: "sent-at", draft: "auth-draft" }, "person@example.com", "", 2000, persistent, tab);
+    clearPendingAuthValue("pending-email", persistent, tab);
+    clearPendingAuthValue("pending-since", persistent, tab);
+    clearPendingAuthValue("sent-at", persistent, tab);
+    writeAuthDraft("auth-draft", { mode: "sign-up", email: "", name: "", updatedAt: 3000 }, persistent, tab);
+    const draft = readAuthDraft("auth-draft", persistent, tab, 3000);
+    expect(getInitialAuthMode("sign-up", false, draft?.mode)).toBe("sign-up");
   });
 
   it("resumes verification with a blank email when app storage is unavailable", () => {
