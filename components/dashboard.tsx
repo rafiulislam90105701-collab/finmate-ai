@@ -262,6 +262,75 @@ function GoalCard({ goal, state, onMutate }: { goal: SavingsGoal; state: Finance
   return <div className="goal-item"><div className="goal-item-head"><div><h3>{goal.name}</h3><p>{goal.targetDate ? `Target: ${dateLabel(goal.targetDate)}` : "No target date"}</p></div><div className="goal-actions"><strong>{percent}%</strong><button className="small-button" aria-label={`Delete ${goal.name}`} onClick={() => { if (window.confirm(`Delete ${goal.name}?`)) onMutate((current) => withActivity({ ...current, goals:current.goals.filter((item) => item.id !== goal.id), contributions:current.contributions.filter((item) => item.goalId !== goal.id) },activity("Savings goal deleted",`${goal.name} was removed.`)),"Goal deleted"); }}><Trash2 size={16}/></button></div></div><div className="progress-row"><span>{formatMoney(goal.savedMinor,state.profile.currency)} saved</span><span>of {formatMoney(goal.targetMinor,state.profile.currency)}</span><div className="progress-track"><div className="progress-fill" style={{width:`${percent}%`,background:goal.color}}/></div></div><form className="contribution-form" onSubmit={addContribution}><input aria-label={`Contribution to ${goal.name}`} value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" placeholder="Amount to add"/><button className="button secondary">Add</button></form>{error && <p className="form-error" style={{marginTop:7}}>{error}</p>}{records.length > 0 && <div className="contribution-history"><p className="muted" style={{fontSize:12,margin:"14px 0 5px"}}>Contribution record</p>{records.map((record) => <div className="contribution-record" key={record.id}><span>{dateLabel(record.date)}</span><strong>+{formatMoney(record.amountMinor,state.profile.currency)}</strong><button className="small-button" aria-label="Remove contribution" onClick={() => removeContribution(record.id)}><X size={14}/></button></div>)}</div>}</div>;
 }
 
+function renderInlineMarkdown(value: string, keyPrefix: string): ReactNode[] {
+  const tokenPattern = /(\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_|\x60[^\x60]+\x60)/g;
+  return value.split(tokenPattern).filter(Boolean).map((part, index) => {
+    const key = keyPrefix + "-" + index;
+    if (part.startsWith("**") && part.endsWith("**")) return <strong key={key}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("__") && part.endsWith("__")) return <strong key={key}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("*") && part.endsWith("*")) return <em key={key}>{part.slice(1, -1)}</em>;
+    if (part.startsWith("_") && part.endsWith("_")) return <em key={key}>{part.slice(1, -1)}</em>;
+    if (part.startsWith("\x60") && part.endsWith("\x60")) return <code key={key}>{part.slice(1, -1)}</code>;
+    return part;
+  });
+}
+
+function AssistantMarkdown({ text }: { text: string }) {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const blocks: ReactNode[] = [];
+  const isDivider = (line: string) => /^\s*(?:---+|\*\*\*|___)\s*$/.test(line);
+  const heading = (line: string) => line.match(/^\s*(#{1,3})\s+(.+?)\s*#*\s*$/);
+  const bullet = (line: string) => line.match(/^\s*[-*+]\s+(.+)$/);
+  const ordered = (line: string) => line.match(/^\s*\d+[.)]\s+(.+)$/);
+  const isTable = (index: number) => index + 1 < lines.length && lines[index].includes("|") && /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[index + 1]);
+  const tableCells = (line: string) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (!line) { i += 1; continue; }
+    if (isDivider(line)) { blocks.push(<hr key={"b-" + i}/>); i += 1; continue; }
+    const headingMatch = heading(line);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const content = renderInlineMarkdown(headingMatch[2], "h-" + i);
+      if (level === 1) blocks.push(<h3 key={"b-" + i}>{content}</h3>);
+      else if (level === 2) blocks.push(<h4 key={"b-" + i}>{content}</h4>);
+      else blocks.push(<h5 key={"b-" + i}>{content}</h5>);
+      i += 1; continue;
+    }
+    if (isTable(i)) {
+      const headers = tableCells(lines[i]);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].trim() && lines[i].includes("|")) { rows.push(tableCells(lines[i])); i += 1; }
+      blocks.push(<div className="message-table-wrap" key={"b-" + (i - rows.length - 2)}><table className="message-table"><thead><tr>{headers.map((cell, index) => <th key={index}>{renderInlineMarkdown(cell, "th-" + index)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, cellIndex) => <td key={cellIndex}>{renderInlineMarkdown(row[cellIndex] ?? "", "td-" + rowIndex + "-" + cellIndex)}</td>)}</tr>)}</tbody></table></div>);
+      continue;
+    }
+    const firstBullet = bullet(line);
+    const firstOrdered = ordered(line);
+    if (firstBullet || firstOrdered) {
+      const useOrdered = Boolean(firstOrdered);
+      const items: string[] = [];
+      while (i < lines.length) {
+        const current = lines[i].trim();
+        const match = useOrdered ? ordered(current) : bullet(current);
+        if (!match) break;
+        items.push(match[1]); i += 1;
+      }
+      const ListTag = useOrdered ? "ol" : "ul";
+      blocks.push(<ListTag key={"b-" + i}>{items.map((item, index) => <li key={index}>{renderInlineMarkdown(item, "li-" + index)}</li>)}</ListTag>);
+      continue;
+    }
+    const paragraph: string[] = [line];
+    i += 1;
+    while (i < lines.length && lines[i].trim() && !isDivider(lines[i].trim()) && !heading(lines[i].trim()) && !bullet(lines[i].trim()) && !ordered(lines[i].trim()) && !isTable(i)) {
+      paragraph.push(lines[i].trim()); i += 1;
+    }
+    blocks.push(<p key={"b-" + i}>{renderInlineMarkdown(paragraph.join(" "), "p-" + i)}</p>);
+  }
+  return <div className="assistant-markdown">{blocks}</div>;
+}
+
 function Assistant({ state, mode, forecast, progress, messages, onMessagesChange, onMutate, onRefreshCloud }: { state: FinanceState; mode: WorkspaceMode; forecast: ReturnType<typeof calculateForecast>; progress: ReturnType<typeof budgetProgress>; messages: ChatMessage[]; onMessagesChange: Dispatch<SetStateAction<ChatMessage[]>>; onMutate: (recipe: (current: FinanceState) => FinanceState, success?: string) => void; onRefreshCloud: () => Promise<void> }) {
   const [question, setQuestion] = useState(""); const [busy, setBusy] = useState(false); const [proposal, setProposal] = useState<{ budgetId: string; currentMinor: number; proposedMinor: number; category: string } | null>(null); const inFlight = useRef(false);
   const appendMessage = (message: ChatMessage) => onMessagesChange((rows) => [...rows, message].slice(-24));
@@ -297,7 +366,7 @@ function Assistant({ state, mode, forecast, progress, messages, onMessagesChange
   const insights = buildInsights(forecast,state.profile.currency,state);
   function draftProposal() { const candidate = [...progress].sort((a,b) => b.percent - a.percent)[0]; if (!candidate) { appendMessage({id:uid(),role:"assistant",text:"Create a category budget first; then I can prepare a change for your review.",source:"Rules-based fallback"}); return; } const current = candidate.amountMinor; setProposal({budgetId:candidate.id,currentMinor:current,proposedMinor:Math.max(0,Math.round(current * .9)),category:categoryName(state.categories,candidate.categoryId)}); }
   async function approveProposal() { if (!proposal) return; const approved = proposal; try { if (mode === "cloud") { const client = getSupabaseBrowserClient(); if (!client) throw new Error("Cloud connection unavailable."); const { error } = await client.rpc("approve_budget_proposal", { p_budget_id: approved.budgetId, p_proposed_minor: approved.proposedMinor, p_reason: `${approved.category} budget changed after explicit review.` }); if (error) throw error; await onRefreshCloud(); } else { onMutate((current) => withActivity({ ...current, budgets:current.budgets.map((item) => item.id === approved.budgetId ? {...item,amountMinor:approved.proposedMinor} : item) },activity("AI budget proposal approved",`${approved.category} budget changed from ${formatMoney(approved.currentMinor,current.profile.currency)} to ${formatMoney(approved.proposedMinor,current.profile.currency)} after review.`)), "Budget proposal applied"); } appendMessage({id:uid(),role:"assistant",text:`You approved the ${approved.category} budget change. The dashboard has been recalculated.`,source:"Confirmed action"}); setProposal(null); } catch { appendMessage({id:uid(),role:"assistant",text:"The budget change was not saved. Review your connection and try again; no local change was applied.",source:"Safe failure"}); } }
-  return <section className="section-page"><div className="page-head"><div><h1>FinMate AI</h1><p>Clear explanations and reviewable suggestions—not financial advice.</p></div></div><div className="assistant-layout"><article className="card chat"><div className="card-head"><div><h2>Money conversation</h2><p>Uses the current workspace summary. It never changes data by itself.</p></div><Bot size={21} color="#477d71"/></div>{messages.map((message) => <div className={`message ${message.role === "user" ? "user" : ""}`} key={message.id}>{message.text}{message.source && <small>{message.source}</small>}</div>)}{busy && <div className="message">Thinking through the figures…</div>}<form className="ask-form" onSubmit={ask}><input value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={700} placeholder="How do upcoming bills affect me?" aria-label="Ask FinMate AI"/><button className="button primary" disabled={busy}>Ask</button></form></article><aside className="card"><div className="card-head"><div><h2>Signals</h2><p>Based on your recorded data</p></div></div><div className="insight-list">{insights.map((insight) => <div key={insight.title} className={`insight ${insight.tone}`}><strong>{insight.title}</strong><p>{insight.body}</p></div>)}</div><button className="button secondary full" style={{marginTop:14}} onClick={draftProposal}><Sparkles size={15}/>Draft a budget change</button>{proposal && <div className="proposal" style={{marginTop:13}}><strong>Review proposed change</strong><p>Reduce the {proposal.category} budget from {formatMoney(proposal.currentMinor,state.profile.currency)} to {formatMoney(proposal.proposedMinor,state.profile.currency)}. This changes your budget plan only; it does not change past spending.</p><div className="proposal-actions"><button className="button primary" onClick={approveProposal}>Approve change</button><button className="button secondary" onClick={() => setProposal(null)}>Reject</button></div></div>}</aside></div></section>;
+  return <section className="section-page"><div className="page-head"><div><h1>FinMate AI</h1><p>Clear explanations and reviewable suggestions—not financial advice.</p></div></div><div className="assistant-layout"><article className="card chat"><div className="card-head"><div><h2>Money conversation</h2><p>Uses the current workspace summary. It never changes data by itself.</p></div><Bot size={21} color="#477d71"/></div>{messages.map((message) => <div className={`message ${message.role === "user" ? "user" : ""}`} key={message.id}>{message.role === "assistant" ? <AssistantMarkdown text={message.text}/> : message.text}{message.source && <small>{message.source}</small>}</div>)}{busy && <div className="message">Thinking through the figures…</div>}<form className="ask-form" onSubmit={ask}><input value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={700} placeholder="How do upcoming bills affect me?" aria-label="Ask FinMate AI"/><button className="button primary" disabled={busy}>Ask</button></form></article><aside className="card"><div className="card-head"><div><h2>Signals</h2><p>Based on your recorded data</p></div></div><div className="insight-list">{insights.map((insight) => <div key={insight.title} className={`insight ${insight.tone}`}><strong>{insight.title}</strong><p>{insight.body}</p></div>)}</div><button className="button secondary full" style={{marginTop:14}} onClick={draftProposal}><Sparkles size={15}/>Draft a budget change</button>{proposal && <div className="proposal" style={{marginTop:13}}><strong>Review proposed change</strong><p>Reduce the {proposal.category} budget from {formatMoney(proposal.currentMinor,state.profile.currency)} to {formatMoney(proposal.proposedMinor,state.profile.currency)}. This changes your budget plan only; it does not change past spending.</p><div className="proposal-actions"><button className="button primary" onClick={approveProposal}>Approve change</button><button className="button secondary" onClick={() => setProposal(null)}>Reject</button></div></div>}</aside></div></section>;
 }
 
 function ActivityLog({ state }: { state: FinanceState }) { return <section className="section-page"><div className="page-head"><div><h1>Activity history</h1><p>A concise record of meaningful actions in this demo workspace.</p></div></div><article className="card"><div className="activity-list">{state.activities.length ? state.activities.map((item) => <div className="activity" key={item.id}><i className="activity-dot"/><div><h3>{item.action}</h3><p>{item.detail}</p></div><time dateTime={item.createdAt}>{new Intl.DateTimeFormat("en-BD",{dateStyle:"medium",timeStyle:"short"}).format(new Date(item.createdAt))}</time></div>) : <Empty text="Actions such as edits, payments, and approved proposals appear here."/>}</div></article></section>; }
