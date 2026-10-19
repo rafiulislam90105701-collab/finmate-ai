@@ -28,10 +28,10 @@ If Vercel's import screen says **No Git Repositories Found**, use its GitHub con
    ```
 
 3. Configure Auth in Supabase Dashboard → Authentication:
-   - Under URL Configuration, set Site URL to `https://finmate-ai-one.vercel.app`.
-   - Add redirect URLs `https://finmate-ai-one.vercel.app/auth/callback` and `http://localhost:3000/auth/callback`.
+   - Under URL Configuration, set Site URL to `https://finmate-ai-78a4.vercel.app`.
+   - Add redirect URLs `https://finmate-ai-78a4.vercel.app/auth/callback` and `http://localhost:3000/auth/callback`.
    - Under Email provider settings, enable **Confirm email**. FinMate refuses to create a signed-in session for an unverified account; the database policies also deny financial rows until Supabase records `email_confirmed_at`.
-   - Under Email Templates → Confirm signup, include `{{ .Token }}` as the verification code (not only `{{ .ConfirmationURL }}`). A 6-digit entry is verified server-side with Supabase `verifyOtp({ email, token, type: 'email' })`. Do not promise an expiry time unless you verify the project's Email OTP Expiration setting.
+   - Under Email Templates → Confirm signup, replace the link-only content with the supplied [FinMate confirmation template](supabase/templates/confirmation.html), which includes `{{ .Token }}`. The 6-digit entry is verified with Supabase `verifyOtp({ email, token, type: 'email' })`. The project's email template is dashboard-managed; verify the sent email before claiming OTP delivery works.
    - Use the existing Supabase email service or configure an authorized SMTP provider if delivery limits require it. Do not expose SMTP credentials to the app.
 4. Verify RLS is enabled and test with two normal users. Do not use a shared demo user for financial information.
 
@@ -39,8 +39,9 @@ Optional assistant Edge Function:
 
 ```powershell
 supabase functions deploy finance-assistant
-supabase secrets set OPENAI_API_KEY=YOUR_SERVER_ONLY_KEY OPENAI_MODEL=gpt-4.1-mini
 ```
+
+The function uses the already-configured `GROQ_API_KEY` secret in Supabase and `openai/gpt-oss-120b`. Never put the key in Vercel or browser code. Stay on Groq's Free tier; the function uses bounded requests and falls back on rate limits. The demo endpoint is rules-only and does not send fictional data to Groq.
 
 ## 3. Deploy to Vercel
 
@@ -51,8 +52,6 @@ supabase secrets set OPENAI_API_KEY=YOUR_SERVER_ONLY_KEY OPENAI_MODEL=gpt-4.1-mi
    ```text
    NEXT_PUBLIC_SUPABASE_URL
    NEXT_PUBLIC_SUPABASE_ANON_KEY
-   OPENAI_API_KEY              # optional, server-only
-   OPENAI_MODEL                # optional
    ```
 
 4. Deploy. Copy the final HTTPS URL into Supabase Auth Site URL and Redirect URLs, then redeploy if Vercel asks you to.

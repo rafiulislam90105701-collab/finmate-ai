@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { explainFinancialRisk, simulateBudgetScenario } from "../supabase/functions/_shared/agent-tools";
+import { explainFinancialRisk, parseFinanceToolArguments, simulateBudgetScenario } from "../supabase/functions/_shared/agent-tools";
 import { buildInsights } from "@/lib/insights";
 import { calculateForecast } from "@/lib/finance";
 import type { FinanceState } from "@/types/finance";
@@ -7,6 +7,14 @@ import type { FinanceState } from "@/types/finance";
 const categories = [{ id: "food", name: "Food" }, { id: "travel", name: "Travel" }];
 
 describe("read-only financial assistant tools", () => {
+  it("accepts only known, bounded tool arguments and rejects malformed or extra fields", () => {
+    expect(parseFinanceToolArguments("get_recent_transactions", '{"limit":5}')).toEqual({limit:5});
+    expect(parseFinanceToolArguments("get_recent_transactions", '{"limit":500}')).toBeNull();
+    expect(parseFinanceToolArguments("get_category_spending", '{"category_name":"Food","user_id":"other"}')).toBeNull();
+    expect(parseFinanceToolArguments("drop_table", "{}")).toBeNull();
+    expect(parseFinanceToolArguments("get_savings_goals", "not-json")).toBeNull();
+  });
+
   it("simulates a requested reduction using recorded category spending without changing records", () => {
     const result = simulateBudgetScenario({
       question: "What if I reduce Food by ৳1,000?",

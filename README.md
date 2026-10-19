@@ -12,7 +12,7 @@ It is designed to remain useful with no credentials: open `/app?demo=1` for a cl
 - Default and custom categories; monthly budgets and progress warnings; savings goals with contribution history.
 - Bills with overdue/upcoming/paid states. Marking a bill paid adds one linked ledger entry, and undoing it removes the linked entry—so forecasts do not double-count it.
 - Deterministic forecast with integer-minor-unit arithmetic, transparent inputs, custom expected-spending adjustment, and shortfall warnings.
-- Assistant UI with a server-side optional AI provider and a question-specific, data-grounded rules-based fallback. Budget proposals require explicit review and approval before they change a budget.
+- Assistant UI with a server-side Groq agent, RLS-scoped read-only finance tools, and a question-specific rules fallback. Budget changes require a separate explicit review and approval.
 - Activity history, JSON export, Supabase migrations, RLS policies, same-owner reference guards, non-destructive cross-device sync, and atomic database RPCs for paid bills and approved budget proposals.
 
 ## Technology
@@ -69,23 +69,17 @@ Never place a Supabase `service_role` key in this repository, browser code, or V
 
 Create two ordinary test accounts, add a transaction as each, then sign in separately and query each table using the application. Every `select`, update, and delete should return only the signed-in user's rows. The migrations enable RLS on every user-owned table, grant Data API access only to authenticated users, and database triggers reject a category, bill, payment, or savings-goal reference that belongs to another user.
 
-## Optional AI provider
+## AI assistant
 
-The UI works without an AI key. In demo mode, `/api/assistant` validates a compact fictional context and returns a question-specific rules-based explanation if no provider is configured. In a signed-in cloud workspace, the UI invokes the Supabase Edge Function, which verifies the JWT and queries the user’s RLS-authorized data itself; the browser does not send a ledger or provider key. Conversation context is bounded to the current workspace session and is never mixed between accounts.
-
-Set these server-only values locally or in Vercel:
-
-```env
-OPENAI_API_KEY=your-server-only-key
-OPENAI_MODEL=gpt-4.1-mini
-```
+Fictional demo conversations use deterministic rules only and never send demo figures to an AI provider. In a signed-in cloud workspace, the UI invokes the Supabase Edge Function. It verifies the session, reads only RLS-authorized data, and calls Groq server-side using `GROQ_API_KEY`; the browser never receives the key. The preferred model is `openai/gpt-oss-120b`. Model usage is subject to the Groq Free tier limits; do not upgrade to a paid tier for this project. If the key is absent, invalid, or rate-limited, the function returns a grounded rules-based fallback.
 
 To deploy the Edge Function (after installing and authenticating the Supabase CLI):
 
 ```powershell
 supabase functions deploy finance-assistant
-supabase secrets set OPENAI_API_KEY=your-server-only-key OPENAI_MODEL=gpt-4.1-mini
 ```
+
+`GROQ_API_KEY` is stored only in Supabase Edge Function Secrets. It is already configured for the current project; never put it in `.env.local`, Vercel, or `NEXT_PUBLIC_*` values. To rotate it, use the Supabase dashboard's Edge Function Secrets or the CLI's secure secret command in a private terminal—never paste it in chat or commit it.
 
 The assistant cannot directly apply a recommendation. It can only explain data or prepare a proposal; the person must approve the proposal, which creates an activity-history entry. The demo endpoint returns `no-store` responses, caps request payloads, prevents duplicate in-flight submissions, applies a best-effort per-instance rate limit, and falls back after a 12-second provider timeout.
 
@@ -123,4 +117,4 @@ Open the deployed HTTPS site in a compatible browser, then choose the browser’
 - **Auth email does not return to the app**: add the exact local and deployed `/auth` redirect URLs in Supabase Auth settings.
 - **A build cannot find dependencies**: delete only this project’s `node_modules` directory, then run `pnpm install` again.
 - **Cloud data does not save**: confirm the migration completed, RLS policies exist, and the browser is signed in with the intended Supabase project.
-- **AI responds with rules-based fallback**: this is expected with no `OPENAI_API_KEY`, during provider downtime, or when rate limited.
+- **AI responds with rules-based fallback**: this is expected with no valid `GROQ_API_KEY`, during provider downtime, or when Groq's free quota is rate-limited.

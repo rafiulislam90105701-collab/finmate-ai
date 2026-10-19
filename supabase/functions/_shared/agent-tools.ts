@@ -7,6 +7,34 @@ function safeMinor(value: number) {
   return Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
 
+const TOOL_ARGUMENT_KEYS: Record<string, string[]> = {
+  get_financial_summary: [],
+  get_category_spending: ["category_name"],
+  get_recent_transactions: ["limit"],
+  get_upcoming_bills: ["limit"],
+  calculate_forecast: [],
+  get_budget_status: ["category_name"],
+  get_savings_goals: ["goal_name"],
+  simulate_budget_scenario: [],
+  propose_budget_change: [],
+  explain_financial_risk: [],
+};
+
+/** Strictly parse only the small, read-only tool arguments the agent supports. */
+export function parseFinanceToolArguments(name: string, raw: string): Record<string, unknown> | null {
+  const allowed = TOOL_ARGUMENT_KEYS[name];
+  if (!allowed) return null;
+  let value: unknown;
+  try { value = JSON.parse(raw); } catch { return null; }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const args = value as Record<string, unknown>;
+  if (Object.keys(args).some((key) => !allowed.includes(key))) return null;
+  if ("category_name" in args && (typeof args.category_name !== "string" || args.category_name.trim().length > 60)) return null;
+  if ("goal_name" in args && (typeof args.goal_name !== "string" || args.goal_name.trim().length > 120)) return null;
+  if ("limit" in args && (!Number.isInteger(args.limit) || (args.limit as number) < 1 || (args.limit as number) > 10)) return null;
+  return args;
+}
+
 /** A read-only scenario estimate for hypothetical future discretionary spending. */
 export function simulateBudgetScenario(input: {
   question: string;

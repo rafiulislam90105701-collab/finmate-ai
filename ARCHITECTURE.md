@@ -8,7 +8,7 @@ Vercel / Next.js application
   ├─ public landing page + installable PWA shell
   ├─ `/auth` (Supabase Auth client)
   ├─ `/app` (middleware-protected when Supabase is configured)
-  └─ server-only optional assistant fallback (`OPENAI_API_KEY`)
+  └─ fictional-demo rules-only assistant endpoint (no external provider)
         │ authenticated Supabase session
         ▼
 Supabase Auth + PostgreSQL
@@ -17,8 +17,8 @@ Supabase Auth + PostgreSQL
   ├─ Row Level Security for every user-owned table
   └─ atomic paid-bill and budget-proposal RPCs
         │
-        └─ optional `finance-assistant` Edge Function
-             verifies JWT → reads RLS-authorized data → calls AI provider server-side
+        └─ `finance-assistant` Edge Function
+             verifies JWT → reads RLS-authorized data → calls Groq server-side
 ```
 
 ## Operating modes
@@ -29,7 +29,7 @@ Supabase Auth + PostgreSQL
 | Production demo | Browser-local, fictional demo | None | No |
 | Production cloud workspace | Supabase PostgreSQL per authenticated user | Supabase Auth | Yes: the latest signed-in data is loaded from and written to the same cloud account on every device/session |
 
-Cloud mode is activated only after `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are configured and the visitor signs in. The browser receives only the public anon key; RLS supplies the per-user access boundary. No service-role or AI provider secret reaches the client.
+Cloud mode is activated only after `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are configured and the visitor signs in. The browser receives only the publishable/anon key; RLS supplies the per-user access boundary. No service-role or AI provider secret reaches the client. Groq receives only bounded conversation history and the signed-in user's queried finance results after the server validates the JWT; tool calls are read-only and bounded. Demo data is never sent to Groq.
 
 ## Data integrity decisions
 

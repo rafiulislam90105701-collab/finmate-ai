@@ -31,32 +31,9 @@ export async function POST(request: Request) {
   const parsed = assistantRequestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return json({ error: "Invalid assistant request." }, 400);
 
-  const { question, summary, currency, context, history } = parsed.data;
+  const { question, summary, currency, context } = parsed.data;
   const fallback = answerRulesBasedAssistant({ question, summary, currency, context });
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return json({ mode: "rules", providerStatus: "not-configured", answer: fallback });
-
-  const workspaceContext = JSON.stringify({ summary, currency, context });
-  try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
-        input: [
-          { role: "system", content: "You are FinMate AI. Use only the supplied fictional-demo financial context. Explain records, deterministic estimates, and optional trade-offs concisely. Do not invent transactions, claim to have changed data, guarantee outcomes, or provide regulated financial advice." },
-          ...history.map((message) => ({ role: message.role, content: message.content })),
-          { role: "user", content: `Question: ${question}\n\nAuthorized workspace context: ${workspaceContext}` }
-        ],
-        max_output_tokens: 260
-      }),
-      signal: AbortSignal.timeout(12_000)
-    });
-    if (!response.ok) throw new Error("Provider unavailable");
-    const body = await response.json() as { output_text?: string };
-    const answer = typeof body.output_text === "string" ? body.output_text.trim() : "";
-    return json({ mode: answer ? "ai" : "rules", providerStatus: answer ? "available" : "empty-response", answer: answer || fallback });
-  } catch {
-    return json({ mode: "rules", providerStatus: "unavailable", answer: fallback });
-  }
+  // Fictional demo conversations never leave this server. Real AI inference is
+  // available only through the authenticated Supabase Edge Function.
+  return json({ mode: "rules", providerStatus: "demo-rules-only", answer: fallback });
 }
