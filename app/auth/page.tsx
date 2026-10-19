@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { getInitialAuthMode, getSafeAuthErrorMessage, getSignupEmailOtpParams, isEmailConfirmed, isSignupEmailConfirmationDisabled, isValidEmailOtp, remainingResendSeconds, SIGNUP_RESEND_COOLDOWN_SECONDS } from "@/lib/auth-validation";
+import { clearPendingAuthValue, getInitialAuthMode, getSafeAuthErrorMessage, getSignupEmailOtpParams, isEmailConfirmed, isSignupEmailConfirmationDisabled, isValidEmailOtp, readPendingAuthValue, remainingResendSeconds, SIGNUP_RESEND_COOLDOWN_SECONDS, writePendingAuthValue } from "@/lib/auth-validation";
 import { getSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase";
 
 type Mode = "sign-in" | "sign-up" | "verify" | "complete" | "reset" | "update-password";
@@ -36,7 +36,7 @@ export default function AuthPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const requestedMode = params.get("mode");
-    const savedEmail = sessionStorage.getItem(PENDING_EMAIL);
+    const savedEmail = readPendingAuthValue(PENDING_EMAIL, localStorage, sessionStorage);
     const initialMode = getInitialAuthMode(requestedMode, Boolean(savedEmail));
     setMode(initialMode);
     if (savedEmail && initialMode === "verify") setEmail(savedEmail);
@@ -45,7 +45,7 @@ export default function AuthPage() {
 
   useEffect(() => {
     const tick = () => {
-      const sentAt = Number(sessionStorage.getItem(RESEND_SENT_AT));
+      const sentAt = Number(readPendingAuthValue(RESEND_SENT_AT, localStorage, sessionStorage));
       setResendIn(remainingResendSeconds(Number.isFinite(sentAt) && sentAt > 0 ? sentAt : null));
     };
     tick();
@@ -55,8 +55,8 @@ export default function AuthPage() {
 
   function switchMode(next: Mode) {
     if (next === "sign-up") {
-      sessionStorage.removeItem(PENDING_EMAIL);
-      sessionStorage.removeItem(RESEND_SENT_AT);
+      clearPendingAuthValue(PENDING_EMAIL, localStorage, sessionStorage);
+      clearPendingAuthValue(RESEND_SENT_AT, localStorage, sessionStorage);
     }
     setMode(next);
     setOtp("");
@@ -108,8 +108,8 @@ export default function AuthPage() {
           tell("Email confirmation is not enabled for this Supabase project. Ask the project owner to enable Confirm Email before creating accounts.", "error");
           return;
         }
-        sessionStorage.setItem(PENDING_EMAIL, email.trim());
-        sessionStorage.setItem(RESEND_SENT_AT, String(Date.now()));
+        writePendingAuthValue(PENDING_EMAIL, email.trim(), localStorage, sessionStorage);
+        writePendingAuthValue(RESEND_SENT_AT, String(Date.now()), localStorage, sessionStorage);
         const verifyUrl = new URL(window.location.href);
         verifyUrl.searchParams.set("mode", "verify-email");
         window.history.replaceState(window.history.state, "", verifyUrl);
@@ -121,7 +121,7 @@ export default function AuthPage() {
         const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password });
         if (error) throw error;
         if (!isEmailConfirmed(data.user)) {
-          sessionStorage.setItem(PENDING_EMAIL, email.trim());
+          writePendingAuthValue(PENDING_EMAIL, email.trim(), localStorage, sessionStorage);
           setMode("verify");
           setResendIn(0);
           tell("Enter the verification code sent to your email. You can request another code below.", "info");
@@ -131,7 +131,7 @@ export default function AuthPage() {
       }
     } catch (error) {
       if (mode === "sign-in" && error instanceof Error && /email not confirmed|email_not_confirmed/i.test(error.message)) {
-        sessionStorage.setItem(PENDING_EMAIL, email.trim());
+        writePendingAuthValue(PENDING_EMAIL, email.trim(), localStorage, sessionStorage);
         setOtp("");
         setMode("verify");
       }
@@ -157,8 +157,8 @@ export default function AuthPage() {
       const { data, error } = await client.auth.verifyOtp(getSignupEmailOtpParams(email, otp));
       if (error) throw error;
       if (!data.session || !isEmailConfirmed(data.user)) throw new Error("Verification did not create a confirmed session");
-      sessionStorage.removeItem(PENDING_EMAIL);
-      sessionStorage.removeItem(RESEND_SENT_AT);
+      clearPendingAuthValue(PENDING_EMAIL, localStorage, sessionStorage);
+      clearPendingAuthValue(RESEND_SENT_AT, localStorage, sessionStorage);
       setOtp("");
       setMode("complete");
       tell("Your email is verified and your account is ready.", "success");
@@ -201,11 +201,11 @@ export default function AuthPage() {
     try {
       const { error } = await client.auth.resend({ email: email.trim(), type: "signup" });
       if (error) throw error;
-      sessionStorage.setItem(RESEND_SENT_AT, String(Date.now()));
+      writePendingAuthValue(RESEND_SENT_AT, String(Date.now()), localStorage, sessionStorage);
       setResendIn(SIGNUP_RESEND_COOLDOWN_SECONDS);
       tell("If this address can receive a message, a verification code has been requested. Check your inbox or spam folder.", "success");
     } catch (error) {
-      sessionStorage.setItem(RESEND_SENT_AT, String(Date.now()));
+      writePendingAuthValue(RESEND_SENT_AT, String(Date.now()), localStorage, sessionStorage);
       setResendIn(SIGNUP_RESEND_COOLDOWN_SECONDS);
       tell(getSafeAuthErrorMessage(error, "resend"), "error");
     } finally {
@@ -238,7 +238,7 @@ export default function AuthPage() {
         <label>Verification code<input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6,10}" maxLength={10} minLength={6} required value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="Enter email code" aria-label="Email verification code" /></label>
         <p className="password-hint">Enter all digits exactly as shown in the email. Codes expire; request a new one if needed.</p>
         <button className="button primary full" disabled={busy || !isValidEmailOtp(otp)}>{busy ? "Verifying…" : "Verify email"}</button>
-        <div className="verify-actions"><button type="button" disabled={busy || resendIn > 0} onClick={() => void resendConfirmation()}>{resendIn ? "Resend code in " + resendIn + "s" : "Resend verification code"}</button><button type="button" disabled={busy} onClick={() => { sessionStorage.removeItem(PENDING_EMAIL); sessionStorage.removeItem(RESEND_SENT_AT); setEmail(""); setOtp(""); switchMode("sign-up"); }}>Change email</button></div>
+        <div className="verify-actions"><button type="button" disabled={busy || resendIn > 0} onClick={() => void resendConfirmation()}>{resendIn ? "Resend code in " + resendIn + "s" : "Resend verification code"}</button><button type="button" disabled={busy} onClick={() => { clearPendingAuthValue(PENDING_EMAIL, localStorage, sessionStorage); clearPendingAuthValue(RESEND_SENT_AT, localStorage, sessionStorage); setEmail(""); setOtp(""); switchMode("sign-up"); }}>Change email</button></div>
       </form> : <form className="auth-form" onSubmit={submit}>
         {mode === "sign-up" && <label>Full name <span className="optional-label">(optional)</span><input autoComplete="name" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" /></label>}
         {mode !== "update-password" && <label>Email address<input autoComplete="email" required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></label>}
