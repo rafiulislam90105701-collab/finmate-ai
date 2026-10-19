@@ -1,7 +1,7 @@
 // Deploy with: supabase functions deploy finance-assistant
 // This function deliberately uses the caller JWT and RLS—not the service role—to scope all data.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.117.3";
-import { BUDGET_STATUS_TOOL_SCHEMA, explainFinancialRisk, filterBudgetStatus, parseFinanceToolArguments, simulateBudgetScenario } from "../_shared/agent-tools.ts";
+import { BUDGET_STATUS_TOOL_SCHEMA, buildGroqFailureLog, explainFinancialRisk, filterBudgetStatus, parseFinanceToolArguments, simulateBudgetScenario } from "../_shared/agent-tools.ts";
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...corsHeaders } });
@@ -127,7 +127,14 @@ Deno.serve(async (request) => {
   try {
     for (let turn=0;turn<2;turn+=1) {
       const response = await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},body:JSON.stringify({model:"openai/gpt-oss-120b",messages,tools:definitions,tool_choice:turn===0?"auto":"none",parallel_tool_calls:false,max_completion_tokens:500,reasoning_effort:"low"}),signal:AbortSignal.timeout(12_000)});
-      if (!response.ok) return json({mode:"rules",providerStatus:response.status===429?"rate-limited":"unavailable",answer:fallback});
+      if (!response.ok) {
+        const providerPayload = await response.json().catch(() => null);
+        const payloadObject = providerPayload && typeof providerPayload === "object" ? providerPayload as Record<string, unknown> : {};
+        const groqMetadata = payloadObject.x_groq && typeof payloadObject.x_groq === "object" ? payloadObject.x_groq as Record<string, unknown> : {};
+        const requestId = response.headers.get("x-request-id") ?? response.headers.get("x-groq-request-id") ?? (typeof groqMetadata.id === "string" ? groqMetadata.id : null);
+        console.error(JSON.stringify(buildGroqFailureLog(response.status, requestId, providerPayload)));
+        return json({mode:"rules",providerStatus:response.status===429?"rate-limited":"unavailable",answer:fallback});
+      }
       const payload = await response.json(); const message = payload?.choices?.[0]?.message;
       if (!message || typeof message!=="object") break;
       const calls = Array.isArray(message.tool_calls)?message.tool_calls.slice(0,8):[];

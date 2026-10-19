@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUDGET_STATUS_TOOL_SCHEMA, explainFinancialRisk, filterBudgetStatus, parseFinanceToolArguments, simulateBudgetScenario } from "../supabase/functions/_shared/agent-tools";
+import { BUDGET_STATUS_TOOL_SCHEMA, buildGroqFailureLog, explainFinancialRisk, filterBudgetStatus, parseFinanceToolArguments, simulateBudgetScenario } from "../supabase/functions/_shared/agent-tools";
 import { buildInsights } from "@/lib/insights";
 import { calculateForecast } from "@/lib/finance";
 import type { FinanceState } from "@/types/finance";
@@ -16,6 +16,7 @@ describe("read-only financial assistant tools", () => {
     const args = parseFinanceToolArguments("get_budget_status", "{}");
     const budgets = [{ category: "Food" }, { category: "Travel" }];
     expect(BUDGET_STATUS_TOOL_SCHEMA.required).not.toContain("category_name");
+    expect(BUDGET_STATUS_TOOL_SCHEMA.properties.category_name.type).toEqual(["string", "null"]);
     expect(args).toEqual({});
     expect(filterBudgetStatus(budgets, args?.category_name)).toEqual(budgets);
   });
@@ -25,9 +26,41 @@ describe("read-only financial assistant tools", () => {
     expect(parseFinanceToolArguments("get_budget_status", '{"category_name":null}')).toEqual({});
     expect(parseFinanceToolArguments("get_budget_status", '{"category_name":""}')).toEqual({ category_name: "" });
     expect(filterBudgetStatus(budgets, null)).toEqual(budgets);
+    expect(filterBudgetStatus(budgets, undefined)).toEqual(budgets);
     expect(filterBudgetStatus(budgets, "   ")).toEqual(budgets);
     expect(parseFinanceToolArguments("get_recent_transactions", '{"limit":null}')).toEqual({});
     expect(parseFinanceToolArguments("get_savings_goals", '{"goal_name":null}')).toEqual({});
+  });
+
+  it("records the Groq 400 schema error without exposing arguments or arbitrary message content", () => {
+    const details = buildGroqFailureLog(400, "req_123-ab", {
+      error: {
+        type: "invalid_request_error",
+        code: "tool_use_failed",
+        param: "tools",
+        message: "parameters for tool get_budget_status did not match schema: errors: [/category_name: expected string but got null]",
+        failed_generation: { attempted_arguments: '{"category_name":"Private category"}' },
+      },
+    });
+    expect(details).toMatchObject({
+      event: "groq_request_failed",
+      status: 400,
+      model: "openai/gpt-oss-120b",
+      request_id: "req_123-ab",
+      provider_error: {
+        type: "invalid_request_error",
+        code: "tool_use_failed",
+        param: "tools",
+        message: "parameters for tool get_budget_status did not match schema: errors: [/category_name: expected string but got null]",
+        message_redacted: false,
+      },
+    });
+    expect(JSON.stringify(details)).not.toContain("Private category");
+
+    const redacted = buildGroqFailureLog(400, null, { error: { message: "The prompt includes my private balance 987654" } });
+    expect(redacted.provider_error).toMatchObject({ message: null, message_redacted: true });
+    expect(JSON.stringify(redacted)).not.toContain("private balance");
+    expect(JSON.stringify(redacted)).not.toContain("987654");
   });
 
   it("accepts only known, bounded tool arguments and rejects malformed or extra fields", () => {

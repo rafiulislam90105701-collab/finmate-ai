@@ -33,14 +33,52 @@ const OPTIONAL_TOOL_ARGUMENT_KEYS: Record<string, string[]> = {
 export const BUDGET_STATUS_TOOL_SCHEMA: {
   name: string;
   description: string;
-  properties: { category_name: { type: "string" } };
+  properties: { category_name: { type: ["string", "null"] } };
   required: string[];
 } = {
   name: "get_budget_status",
   description: "Read budget status. If the user asks about budgets overall, omit category_name entirely (do not use null). Include category_name only when the user names one category.",
-  properties: { category_name: { type: "string" } },
+  // GPT-OSS can emit null for an optional argument. Accept it at provider
+  // validation, then parseFinanceToolArguments normalizes it to omission.
+  properties: { category_name: { type: ["string", "null"] } },
   required: [],
 };
+
+function safeProviderField(value: unknown, maxLength = 100): string | null {
+  return typeof value === "string" && value.length <= maxLength && /^[A-Za-z0-9_./:-]+$/.test(value)
+    ? value
+    : null;
+}
+
+/** Build a privacy-limited log record; never include prompts, args, or response bodies. */
+export function buildGroqFailureLog(status: number, requestId: string | null, payload: unknown) {
+  const root = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  const error = root.error && typeof root.error === "object" ? root.error as Record<string, unknown> : {};
+  const rawMessage = typeof error.message === "string" ? error.message.trim() : "";
+  const schemaError = rawMessage.match(/^parameters for tool ([a-z][a-z0-9_]{0,63}) did not match schema:\s*errors:\s*\[([a-z0-9_./:,\s-]{1,240})\]$/i);
+  const genericToolError = /^invalid tool call generated$/i.test(rawMessage)
+    ? "Invalid tool call generated"
+    : /^failed to call a function\./i.test(rawMessage)
+      ? "Failed to call a function"
+      : null;
+  const safeMessage = schemaError
+    ? `parameters for tool ${schemaError[1]} did not match schema: errors: [${schemaError[2].trim()}]`
+    : genericToolError;
+
+  return {
+    event: "groq_request_failed",
+    status: Number.isInteger(status) ? status : null,
+    model: "openai/gpt-oss-120b",
+    request_id: safeProviderField(requestId, 120),
+    provider_error: {
+      type: safeProviderField(error.type),
+      code: safeProviderField(error.code),
+      param: safeProviderField(error.param),
+      message: safeMessage,
+      message_redacted: Boolean(rawMessage && !safeMessage),
+    },
+  };
+}
 
 /** Strictly parse only the small, read-only tool arguments the agent supports. */
 export function parseFinanceToolArguments(name: string, raw: string): Record<string, unknown> | null {
