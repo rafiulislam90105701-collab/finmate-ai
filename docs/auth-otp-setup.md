@@ -1,6 +1,6 @@
 # FinMate email verification and Supabase Auth setup
 
-FinMate's sign-up screen now expects a six-digit email OTP. It calls `signUp`, then verifies with `verifyOtp({ email, token, type: "signup" })`. Resend uses `resend({ email, type: "signup" })`. The browser Supabase client persists the resulting session using the existing `@supabase/ssr` browser storage/cookie integration. Password reset continues to use the recovery callback and `updateUser` flow.
+FinMate's sign-up screen now expects a six-digit email OTP. It calls `signUp`, then verifies with `verifyOtp({ email, token, type: "email" })`. Resend uses `resend({ email, type: "signup" })`. The browser Supabase client persists the resulting session using the existing `@supabase/ssr` browser storage/cookie integration. Password reset continues to use the recovery callback and `updateUser` flow.
 
 ## Required dashboard setup
 
