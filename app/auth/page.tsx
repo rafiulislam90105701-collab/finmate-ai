@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { ArrowLeft, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { getInitialAuthMode, getSafeAuthErrorMessage, getSignupNextStep, isEmailConfirmed, isValidEmailOtp, remainingResendSeconds, SIGNUP_RESEND_COOLDOWN_SECONDS } from "@/lib/auth-validation";
+import { getInitialAuthMode, getSafeAuthErrorMessage, getSignupEmailOtpParams, isEmailConfirmed, isSignupEmailConfirmationDisabled, isValidEmailOtp, remainingResendSeconds, SIGNUP_RESEND_COOLDOWN_SECONDS } from "@/lib/auth-validation";
 import { getSupabaseBrowserClient, hasSupabaseConfig } from "@/lib/supabase";
 
-type Mode = "sign-in" | "sign-up" | "verify" | "reset" | "update-password";
+type Mode = "sign-in" | "sign-up" | "verify" | "complete" | "reset" | "update-password";
 const PENDING_EMAIL = "finmate.pending-verification-email";
 const RESEND_SENT_AT = "finmate.signup-otp-last-sent-at";
 
@@ -92,14 +92,14 @@ export default function AuthPage() {
           options: { data: { full_name: name.trim() } },
         });
         if (error) throw error;
-        if (getSignupNextStep(Boolean(data.session), data.user) === "workspace") {
-          sessionStorage.removeItem(PENDING_EMAIL);
-          sessionStorage.removeItem(RESEND_SENT_AT);
-          location.replace("/app");
-          return;
-        }
         if (data.user?.identities?.length === 0) {
           tell("If this address already has an account, sign in or use Forgot password. Otherwise check your email for a verification code.", "info");
+          return;
+        }
+        if (isSignupEmailConfirmationDisabled(Boolean(data.session), data.user)) {
+          const { error: signOutError } = await client.auth.signOut({ scope: "local" });
+          if (signOutError) throw signOutError;
+          tell("Email confirmation is not enabled for this Supabase project. Ask the project owner to enable Confirm Email before creating accounts.", "error");
           return;
         }
         sessionStorage.setItem(PENDING_EMAIL, email.trim());
@@ -145,15 +145,37 @@ export default function AuthPage() {
     setBusy(true);
     tell("");
     try {
-      const { data, error } = await client.auth.verifyOtp({ email: email.trim(), token: otp, type: "signup" });
+      const { data, error } = await client.auth.verifyOtp(getSignupEmailOtpParams(email, otp));
       if (error) throw error;
       if (!data.session || !isEmailConfirmed(data.user)) throw new Error("Verification did not create a confirmed session");
       sessionStorage.removeItem(PENDING_EMAIL);
       sessionStorage.removeItem(RESEND_SENT_AT);
       setOtp("");
-      location.replace("/app");
+      setMode("complete");
+      tell("Your email is verified and your account is ready.", "success");
     } catch (error) {
       tell(getSafeAuthErrorMessage(error, "verify"), "error");
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function signOutToSignIn() {
+    const client = getSupabaseBrowserClient();
+    if (!client || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    tell("");
+    try {
+      const { error } = await client.auth.signOut({ scope: "local" });
+      if (error) throw error;
+      setPassword("");
+      setConfirmPassword("");
+      setMode("sign-in");
+      tell("Email verified. Sign in with the same email and password whenever you're ready.", "success");
+    } catch {
+      tell("Your account is verified, but we couldn't sign you out automatically. You can continue to your dashboard.", "error");
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -187,6 +209,7 @@ export default function AuthPage() {
     "sign-in": "Welcome back.",
     "sign-up": "A clearer view starts here.",
     verify: "Enter your verification code.",
+    complete: "Your account is ready.",
     reset: "Reset your password.",
     "update-password": "Choose a new password.",
   };
@@ -195,10 +218,14 @@ export default function AuthPage() {
     <section className="auth-panel" aria-labelledby="auth-title">
       <Link href="/" className="back-link"><ArrowLeft size={16}/> Back to home</Link>
       <div className="brand"><span className="brand-mark">F</span>FinMate AI</div>
-      <div className="auth-heading"><span className="eyebrow">Private finance workspace</span><h1 id="auth-title">{titles[mode]}</h1><p>{mode === "verify" ? <>We requested a verification code for <strong>{email || "your email address"}</strong>. Enter the six digits to finish signing up and securely open your workspace.</> : hasSupabaseConfig ? "Your financial data is protected by your account." : "Cloud authentication needs Supabase configuration. Demo data is fictional and local."}</p></div>
+      <div className="auth-heading"><span className="eyebrow">Private finance workspace</span><h1 id="auth-title">{titles[mode]}</h1><p>{mode === "verify" ? <>We requested a verification code for <strong>{email || "your email address"}</strong>. Enter the six digits to finish signing up and securely open your workspace.</> : mode === "complete" ? "Your email address is confirmed. Your account is ready to use." : hasSupabaseConfig ? "Your financial data is protected by your account." : "Cloud authentication needs Supabase configuration. Demo data is fictional and local."}</p></div>
 
-      {mode === "verify" ? <form className="auth-form" onSubmit={verifyCode}>
-        <label>Email address<input autoComplete="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>
+      {mode === "complete" ? <div className="auth-form">
+        <button className="button primary full" type="button" onClick={() => location.assign("/app")}>Go to dashboard</button>
+        <button className="button secondary full" type="button" disabled={busy} onClick={() => void signOutToSignIn()}>{busy ? "Signing out…" : "Sign out and go to sign in"}</button>
+      </div> : mode === "verify" ? <form className="auth-form" onSubmit={verifyCode}>
+        <label>Email address<input autoComplete="email" required type="email" value={email} readOnly aria-describedby="verification-email-hint" placeholder="you@example.com" /></label>
+        <span id="verification-email-hint" className="password-hint">To use a different address, choose “Change email” and restart signup.</span>
         <label>Six-digit verification code<input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} minLength={6} required value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" aria-label="Six-digit verification code" /></label>
         <p className="password-hint">Enter the code from the email to verify your address. Codes expire; request a new one if needed.</p>
         <button className="button primary full" disabled={busy || !isValidEmailOtp(otp)}>{busy ? "Verifying…" : "Verify email"}</button>
@@ -212,7 +239,7 @@ export default function AuthPage() {
       </form>}
 
       {message && <p className={`form-message ${messageKind}`} role={messageKind === "error" ? "alert" : "status"}>{message}</p>}
-      {mode !== "verify" && <div className="auth-switch">{mode === "sign-in" && <><button type="button" onClick={() => switchMode("reset")}>Forgot password?</button><span>·</span><button type="button" onClick={() => switchMode("sign-up")}>Create an account</button><button className="verify-entry" type="button" onClick={() => { switchMode("verify"); tell("Enter your email and request a verification code. We won't reveal account status.", "info"); }}>Need a verification code?</button></>}{mode === "sign-up" && <button type="button" onClick={() => switchMode("sign-in")}>Already have an account? Sign in</button>}{(mode === "reset" || mode === "update-password") && <button type="button" onClick={() => switchMode("sign-in")}>Back to sign in</button>}</div>}
+      {mode !== "verify" && mode !== "complete" && <div className="auth-switch">{mode === "sign-in" && <><button type="button" onClick={() => switchMode("reset")}>Forgot password?</button><span>·</span><button type="button" onClick={() => switchMode("sign-up")}>Create an account</button><button className="verify-entry" type="button" onClick={() => { switchMode("verify"); tell("Enter your email and request a verification code. We won't reveal account status.", "info"); }}>Need a verification code?</button></>}{mode === "sign-up" && <button type="button" onClick={() => switchMode("sign-in")}>Already have an account? Sign in</button>}{(mode === "reset" || mode === "update-password") && <button type="button" onClick={() => switchMode("sign-in")}>Back to sign in</button>}</div>}
       {mode === "sign-in" && <div className="demo-box"><LockKeyhole size={18}/><div><strong>Just looking around?</strong><p>Explore fictional figures in a separate local demo—no real financial data or account sync.</p><Link className="button secondary" href="/app?demo=1">Open demo</Link></div></div>}
       <div className="auth-trust"><ShieldCheck size={15}/><span>Private by design · Your account data stays yours</span></div>
       <div className="auth-signup-note"><Mail size={14}/> Verification is handled securely by your account provider.</div>
