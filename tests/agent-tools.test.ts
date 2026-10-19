@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { explainFinancialRisk, parseFinanceToolArguments, simulateBudgetScenario } from "../supabase/functions/_shared/agent-tools";
+import { BUDGET_STATUS_TOOL_SCHEMA, explainFinancialRisk, filterBudgetStatus, parseFinanceToolArguments, simulateBudgetScenario } from "../supabase/functions/_shared/agent-tools";
 import { buildInsights } from "@/lib/insights";
 import { calculateForecast } from "@/lib/finance";
 import type { FinanceState } from "@/types/finance";
@@ -7,6 +7,29 @@ import type { FinanceState } from "@/types/finance";
 const categories = [{ id: "food", name: "Food" }, { id: "travel", name: "Travel" }];
 
 describe("read-only financial assistant tools", () => {
+  it("accepts a valid category-specific budget status argument", () => {
+    expect(parseFinanceToolArguments("get_budget_status", '{"category_name":"Food"}')).toEqual({ category_name: "Food" });
+    expect(filterBudgetStatus([{ category: "Food" }, { category: "Travel" }], " Food ")).toEqual([{ category: "Food" }]);
+  });
+
+  it("accepts an omitted category for an overall budget status request", () => {
+    const args = parseFinanceToolArguments("get_budget_status", "{}");
+    const budgets = [{ category: "Food" }, { category: "Travel" }];
+    expect(BUDGET_STATUS_TOOL_SCHEMA.required).not.toContain("category_name");
+    expect(args).toEqual({});
+    expect(filterBudgetStatus(budgets, args?.category_name)).toEqual(budgets);
+  });
+
+  it("normalizes null or blank optional categories to an overall query", () => {
+    const budgets = [{ category: "Food" }, { category: "Travel" }];
+    expect(parseFinanceToolArguments("get_budget_status", '{"category_name":null}')).toEqual({});
+    expect(parseFinanceToolArguments("get_budget_status", '{"category_name":""}')).toEqual({ category_name: "" });
+    expect(filterBudgetStatus(budgets, null)).toEqual(budgets);
+    expect(filterBudgetStatus(budgets, "   ")).toEqual(budgets);
+    expect(parseFinanceToolArguments("get_recent_transactions", '{"limit":null}')).toEqual({});
+    expect(parseFinanceToolArguments("get_savings_goals", '{"goal_name":null}')).toEqual({});
+  });
+
   it("accepts only known, bounded tool arguments and rejects malformed or extra fields", () => {
     expect(parseFinanceToolArguments("get_recent_transactions", '{"limit":5}')).toEqual({limit:5});
     expect(parseFinanceToolArguments("get_recent_transactions", '{"limit":500}')).toBeNull();

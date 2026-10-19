@@ -20,6 +20,28 @@ const TOOL_ARGUMENT_KEYS: Record<string, string[]> = {
   explain_financial_risk: [],
 };
 
+// Every currently exposed argument is optional. Groq sometimes serializes an
+// absent optional string as null; normalize it to omission before validation.
+const OPTIONAL_TOOL_ARGUMENT_KEYS: Record<string, string[]> = {
+  get_category_spending: ["category_name"],
+  get_recent_transactions: ["limit"],
+  get_upcoming_bills: ["limit"],
+  get_budget_status: ["category_name"],
+  get_savings_goals: ["goal_name"],
+};
+
+export const BUDGET_STATUS_TOOL_SCHEMA: {
+  name: string;
+  description: string;
+  properties: { category_name: { type: "string" } };
+  required: string[];
+} = {
+  name: "get_budget_status",
+  description: "Read budget status. If the user asks about budgets overall, omit category_name entirely (do not use null). Include category_name only when the user names one category.",
+  properties: { category_name: { type: "string" } },
+  required: [],
+};
+
 /** Strictly parse only the small, read-only tool arguments the agent supports. */
 export function parseFinanceToolArguments(name: string, raw: string): Record<string, unknown> | null {
   const allowed = TOOL_ARGUMENT_KEYS[name];
@@ -27,12 +49,21 @@ export function parseFinanceToolArguments(name: string, raw: string): Record<str
   let value: unknown;
   try { value = JSON.parse(raw); } catch { return null; }
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const args = value as Record<string, unknown>;
+  const args = { ...(value as Record<string, unknown>) };
   if (Object.keys(args).some((key) => !allowed.includes(key))) return null;
+  for (const key of OPTIONAL_TOOL_ARGUMENT_KEYS[name] ?? []) {
+    if (args[key] === null) delete args[key];
+  }
   if ("category_name" in args && (typeof args.category_name !== "string" || args.category_name.trim().length > 60)) return null;
   if ("goal_name" in args && (typeof args.goal_name !== "string" || args.goal_name.trim().length > 120)) return null;
   if ("limit" in args && (!Number.isInteger(args.limit) || (args.limit as number) < 1 || (args.limit as number) > 10)) return null;
   return args;
+}
+
+/** Missing, null, or blank category means the caller requested all budgets. */
+export function filterBudgetStatus<T extends { category: string }>(items: T[], categoryName: unknown): T[] {
+  const category = typeof categoryName === "string" ? categoryName.trim().toLocaleLowerCase("en-US") : "";
+  return category ? items.filter((item) => item.category.toLocaleLowerCase("en-US") === category) : items;
 }
 
 /** A read-only scenario estimate for hypothetical future discretionary spending. */
