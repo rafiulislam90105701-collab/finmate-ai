@@ -24,7 +24,7 @@ Next.js 15 App Router, TypeScript (strict), React 19, Tailwind CSS, Recharts, Lu
 Prerequisites: Node.js 22+ and pnpm 11.25.0 (Corepack is recommended). The locked Supabase client requires Node.js 22+.
 
 ```powershell
-cd "C:\Users\Crescent\OneDrive\Documents\ChatGPT\Daily Routine tracker\FinMate-AI"
+cd path\to\FinMate-AI
 pnpm install
 pnpm dev
 ```
@@ -52,7 +52,7 @@ available now − unpaid bills − expected remaining spending = month-end estim
 
 ## Supabase setup
 
-1. Create a Supabase project and set its Site URL to your production origin (for example, `https://finmate-ai-78a4.vercel.app`). Add `https://YOUR-DOMAIN/auth/callback` and `http://localhost:3000/auth/callback` to Auth Redirect URLs. This callback exchanges confirmation and password-recovery codes for a secure session.
+1. Use the intended Supabase project and set its Site URL to the actual production HTTPS origin after deployment. Add `https://YOUR_PRODUCTION_DOMAIN/auth/callback` and `http://localhost:3000/auth/callback` to Auth Redirect URLs. Signup confirmation uses a six-digit email code; password recovery and previously issued callback links continue through the callback route. See [email OTP setup](docs/auth-otp-setup.md).
 2. In the SQL editor, apply the migrations in filename order—[001_finmate_schema.sql](supabase/migrations/001_finmate_schema.sql), [002_security_hardening.sql](supabase/migrations/002_security_hardening.sql), [20261015180542_data_api_security_and_indexes.sql](supabase/migrations/20261015180542_data_api_security_and_indexes.sql), [20261016090000_bill_payment_integrity.sql](supabase/migrations/20261016090000_bill_payment_integrity.sql), and [20261018185426_revoke_untrusted_rls_auto_enable.sql](supabase/migrations/20261018185426_revoke_untrusted_rls_auto_enable.sql)—or use `supabase db push` after linking a project.
 3. Copy `.env.example` to `.env.local` and set only the project URL and **anon** key:
 

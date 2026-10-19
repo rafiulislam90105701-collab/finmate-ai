@@ -28,20 +28,21 @@ If Vercel's import screen says **No Git Repositories Found**, use its GitHub con
    ```
 
 3. Configure Auth in Supabase Dashboard → Authentication:
-   - Under URL Configuration, set Site URL to `https://finmate-ai-78a4.vercel.app`.
-   - Add redirect URLs `https://finmate-ai-78a4.vercel.app/auth/callback` and `http://localhost:3000/auth/callback`.
+   - Under URL Configuration, set Site URL to the actual production HTTPS domain after deployment.
+   - Add redirect URLs `https://YOUR_PRODUCTION_DOMAIN/auth/callback` and `http://localhost:3000/auth/callback`.
    - Under Email provider settings, enable **Confirm email**. FinMate refuses to create a signed-in session for an unverified account; the database policies also deny financial rows until Supabase records `email_confirmed_at`.
-   - Under Email Templates → Confirm signup, replace the link-only content with the supplied [FinMate confirmation template](supabase/templates/confirmation.html), which includes `{{ .Token }}`. The 6-digit entry is verified with Supabase `verifyOtp({ email, token, type: 'email' })`. The project's email template is dashboard-managed; verify the sent email before claiming OTP delivery works.
-   - Use the existing Supabase email service or configure an authorized SMTP provider if delivery limits require it. Do not expose SMTP credentials to the app.
+   - Follow [the email OTP and SMTP setup guide](docs/auth-otp-setup.md). The app expects the Confirm signup email to include `{{ .Token }}` and verifies signup codes with `verifyOtp({ email, token, type: 'signup' })`. Hosted email templates and SMTP settings are dashboard-managed; verify delivery using a real inbox before claiming OTP works.
+   - The Supabase security advisor previously reported leaked-password protection disabled. Enable it in the Auth password-security settings if available for the project plan, then re-run the advisor. Never put SMTP or service-role credentials in the app.
 4. Verify RLS is enabled and test with two normal users. Do not use a shared demo user for financial information.
 
 Optional assistant Edge Function:
 
 ```powershell
 supabase functions deploy finance-assistant
+supabase functions deploy finance-action
 ```
 
-The function uses the already-configured `GROQ_API_KEY` secret in Supabase and `openai/gpt-oss-120b`. Never put the key in Vercel or browser code. Stay on Groq's Free tier; the function uses bounded requests and falls back on rate limits. The demo endpoint is rules-only and does not send fictional data to Groq.
+The assistant uses the already-configured `GROQ_API_KEY` secret in Supabase and `openai/gpt-oss-120b`. Never put the key in Vercel or browser code. Stay on Groq's Free tier; the function uses bounded requests and falls back on rate limits. The `finance-action` function validates proposals again on the server and uses the signed-in caller's JWT and existing RLS; it does not use a service-role key or require a new migration. Deploy both functions before enabling confirmed AI actions. The demo endpoint is rules-only and does not send fictional data to Groq.
 
 ## 3. Deploy to Vercel
 
