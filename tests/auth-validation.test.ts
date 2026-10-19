@@ -31,6 +31,11 @@ describe("authentication validation", () => {
       .toBe("We couldn't start the password reset. Please try again shortly.");
   });
 
+  it("keeps wrong-password sign-in feedback generic", () => {
+    expect(getSafeAuthErrorMessage(new Error("Invalid login credentials for private@example.com"), "sign-in"))
+      .toBe("We couldn't verify those sign-in details. Check your email and password, or reset your password.");
+  });
+
   it("validates six-digit email codes and gives safe feedback for invalid codes and rate limits", () => {
     expect(isValidEmailOtp("123456")).toBe(true);
     expect(isValidEmailOtp("12345")).toBe(false);
