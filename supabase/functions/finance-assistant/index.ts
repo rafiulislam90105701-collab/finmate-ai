@@ -1,7 +1,7 @@
 // Deploy with: supabase functions deploy finance-assistant
 // This function deliberately uses the caller JWT and RLS—not the service role—to scope all data.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.117.3";
-import { BUDGET_STATUS_TOOL_SCHEMA, buildGroqFailureLog, explainFinancialRisk, filterBudgetStatus, parseFinanceToolArguments, simulateBudgetScenario } from "../_shared/agent-tools.ts";
+import { BUDGET_STATUS_TOOL_SCHEMA, buildDeterministicBudgetStatusAnswer, buildGroqFailureLog, explainFinancialRisk, filterBudgetStatus, parseFinanceToolArguments, simulateBudgetScenario } from "../_shared/agent-tools.ts";
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...corsHeaders } });
@@ -87,6 +87,8 @@ Deno.serve(async (request) => {
   const simulation = simulateBudgetScenario({question,currency:profile.currency,currentProjectedMinor:projected,categories:categories ?? [],spendingByCategory:spent});
   const risks = explainFinancialRisk({today:new Intl.DateTimeFormat("en-CA",{timeZone:profile.timezone ?? "UTC",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()),currency:profile.currency,projectedMinor:projected,budgets:budgets ?? [],categories:categories ?? [],spendingByCategory:spent,unpaidByCategory,bills:unpaid,goals:goals ?? []});
   const fallback = rulesAnswer(question,profile.currency,{available,projected,unpaidMinor,expected,categories:categorySpending,bills:upcomingBills,goals:savingsGoals});
+  const deterministicBudgetAnswer = buildDeterministicBudgetStatusAnswer(question, month, profile.currency, (categories ?? []).map((item) => item.name), budgetStatus);
+  if (deterministicBudgetAnswer) return json({mode:"rules",providerStatus:"deterministic-budget-status",answer:deterministicBudgetAnswer});
   const key = Deno.env.get("GROQ_API_KEY");
   if (!key) return json({mode:"rules",providerStatus:"not-configured",answer:fallback});
   const history = Array.isArray(body.history) ? body.history.slice(-8).flatMap((item) => item && (item.role==="user" || item.role==="assistant") && typeof item.content==="string" && item.content.trim() ? [{role:item.role,content:item.content.trim().slice(0,700)}] : []) : [];
