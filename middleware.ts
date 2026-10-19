@@ -19,7 +19,7 @@ export async function middleware(request: NextRequest) {
       },
     },
   });
-  const auth = supabase.auth as unknown as { getUser: () => Promise<{ data: { user: { id: string } | null }; error: unknown }> };
+  const auth = supabase.auth as unknown as { getUser: () => Promise<{ data: { user: { id: string; email_confirmed_at?: string | null } | null }; error: unknown }> };
   const { data: { user }, error } = await auth.getUser();
   // The explicitly labelled fictional demo is deliberately available without
   // an account; all other cloud workspace visits require authentication.
@@ -28,6 +28,14 @@ export async function middleware(request: NextRequest) {
   // Let the client retry; RLS still protects all cloud data.
   if (!error && !user && request.nextUrl.pathname.startsWith("/app") && !demoRequested) {
     const redirect = request.nextUrl.clone(); redirect.pathname = "/auth"; redirect.searchParams.set("next", request.nextUrl.pathname);
+    const redirectResponse = NextResponse.redirect(redirect);
+    response.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
+    response = redirectResponse;
+  }
+  if (!error && user && !user.email_confirmed_at && request.nextUrl.pathname.startsWith("/app") && !demoRequested) {
+    const redirect = request.nextUrl.clone();
+    redirect.pathname = "/auth";
+    redirect.search = "?mode=verify-email";
     const redirectResponse = NextResponse.redirect(redirect);
     response.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
     response = redirectResponse;

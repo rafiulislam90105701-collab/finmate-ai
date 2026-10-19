@@ -18,8 +18,8 @@ If Vercel's import screen says **No Git Repositories Found**, use its GitHub con
 
 ## 2. Prepare Supabase
 
-1. Create a project in your own Supabase organisation.
-2. Apply every file in `supabase/migrations/` in filename order through the SQL editor, or apply them through the Supabase CLI:
+1. Use the existing Supabase project `ahgbbmefuagafjxandqa` for the connected FinMate deployment.
+2. The migration files in `supabase/migrations/` are the schema and security source of truth. Apply any unapplied files in filename order through the SQL editor or Supabase CLI:
 
    ```powershell
    supabase login
@@ -27,10 +27,12 @@ If Vercel's import screen says **No Git Repositories Found**, use its GitHub con
    supabase db push
    ```
 
-3. Configure Auth:
-   - Site URL: `https://YOUR-VERCEL-DOMAIN`
-   - Redirect URLs: `https://YOUR-VERCEL-DOMAIN/auth/callback` and `http://localhost:3000/auth/callback`
-   - Keep email confirmation enabled if you want verified sign-up.
+3. Configure Auth in Supabase Dashboard → Authentication:
+   - Under URL Configuration, set Site URL to `https://finmate-ai-one.vercel.app`.
+   - Add redirect URLs `https://finmate-ai-one.vercel.app/auth/callback` and `http://localhost:3000/auth/callback`.
+   - Under Email provider settings, enable **Confirm email**. FinMate refuses to create a signed-in session for an unverified account; the database policies also deny financial rows until Supabase records `email_confirmed_at`.
+   - Under Email Templates → Confirm signup, include `{{ .Token }}` as the verification code (not only `{{ .ConfirmationURL }}`). A 6-digit entry is verified server-side with Supabase `verifyOtp({ email, token, type: 'email' })`. Do not promise an expiry time unless you verify the project's Email OTP Expiration setting.
+   - Use the existing Supabase email service or configure an authorized SMTP provider if delivery limits require it. Do not expose SMTP credentials to the app.
 4. Verify RLS is enabled and test with two normal users. Do not use a shared demo user for financial information.
 
 Optional assistant Edge Function:
