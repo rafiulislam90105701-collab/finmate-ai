@@ -4,7 +4,7 @@
 
 **FinMate AI helps people turn a busy month of income, spending, bills, budgets, and savings goals into a clear, reviewable plan.** It is a responsive personal-finance PWA built for everyday organisation, with BDT-ready display and a transparent forecast rather than vague promises.
 
-**Public website:** https://finmate-ai-iota.vercel.app/
+**Public website:** https://finmate-ai-78a4.vercel.app/
 
 FinMate is for people who want one calm place to:
 
@@ -65,19 +65,19 @@ The fictional demo is visibly labelled and stays in the local browser. Signed-in
 
 ## Shareable public description
 
-> FinMate AI is a calm personal-finance workspace for tracking income, expenses, bills, budgets, and savings goals. It shows a transparent month-end estimate, keeps bill payments from being double counted, and gives reviewable explanations without making financial decisions for you. Try the fictional demo at https://finmate-ai-iota.vercel.app/
+> FinMate AI is a calm personal-finance workspace for tracking income, expenses, bills, budgets, and savings goals. It shows a transparent month-end estimate, keeps bill payments from being double counted, and gives reviewable explanations without making financial decisions for you. Try the fictional demo at https://finmate-ai-78a4.vercel.app/
 
 ## Short social-media post
 
-> Want a clearer picture of your month? FinMate AI brings your transactions, bills, budgets, savings goals, and an honest forecast into one simple workspace. Explore the clearly labelled fictional demo here: https://finmate-ai-iota.vercel.app/ #PersonalFinance #Budgeting #FinMateAI
+> Want a clearer picture of your month? FinMate AI brings your transactions, bills, budgets, savings goals, and an honest forecast into one simple workspace. Explore the clearly labelled fictional demo here: https://finmate-ai-78a4.vercel.app/ #PersonalFinance #Budgeting #FinMateAI
 
 ## Shareable introduction in Bangla
 
-> FinMate AI হলো আয়-ব্যয়, বিল, বাজেট ও সেভিংস লক্ষ্য এক জায়গায় গুছিয়ে দেখার একটি personal-finance workspace। এটি আপনার তথ্যের ভিত্তিতে স্বচ্ছ month-end estimate দেখায়, কিন্তু কোনো টাকা সরায় না বা স্বয়ংক্রিয় সিদ্ধান্ত নেয় না। নিরাপদে দেখার জন্য fictional demo খুলুন: https://finmate-ai-iota.vercel.app/
+> FinMate AI হলো আয়-ব্যয়, বিল, বাজেট ও সেভিংস লক্ষ্য এক জায়গায় গুছিয়ে দেখার একটি personal-finance workspace। এটি আপনার তথ্যের ভিত্তিতে স্বচ্ছ month-end estimate দেখায়, কিন্তু কোনো টাকা সরায় না বা স্বয়ংক্রিয় সিদ্ধান্ত নেয় না। নিরাপদে দেখার জন্য fictional demo খুলুন: https://finmate-ai-78a4.vercel.app/
 
 ## How to share the app
 
-1. Copy this exact public link: https://finmate-ai-iota.vercel.app/
+1. Copy this exact public link: https://finmate-ai-78a4.vercel.app/
 2. Tell recipients that **Explore fictional demo** uses sample figures stored only in their browser.
 3. Tell people who need their own synchronized data to choose **Create an account**, then sign in on each device with the same account.
 4. Do not share one user account between different people when separate financial records are needed.

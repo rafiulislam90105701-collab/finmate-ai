@@ -52,7 +52,7 @@ available now − unpaid bills − expected remaining spending = month-end estim
 
 ## Supabase setup
 
-1. Create a Supabase project and set its Site URL to your production origin (for example, `https://finmate-ai-one.vercel.app`). Add `https://YOUR-DOMAIN/auth/callback` and `http://localhost:3000/auth/callback` to Auth Redirect URLs. This callback exchanges confirmation and password-recovery codes for a secure session.
+1. Create a Supabase project and set its Site URL to your production origin (for example, `https://finmate-ai-78a4.vercel.app`). Add `https://YOUR-DOMAIN/auth/callback` and `http://localhost:3000/auth/callback` to Auth Redirect URLs. This callback exchanges confirmation and password-recovery codes for a secure session.
 2. In the SQL editor, apply the migrations in filename order—[001_finmate_schema.sql](supabase/migrations/001_finmate_schema.sql), [002_security_hardening.sql](supabase/migrations/002_security_hardening.sql), [20261015180542_data_api_security_and_indexes.sql](supabase/migrations/20261015180542_data_api_security_and_indexes.sql), [20261016090000_bill_payment_integrity.sql](supabase/migrations/20261016090000_bill_payment_integrity.sql), and [20261018185426_revoke_untrusted_rls_auto_enable.sql](supabase/migrations/20261018185426_revoke_untrusted_rls_auto_enable.sql)—or use `supabase db push` after linking a project.
 3. Copy `.env.example` to `.env.local` and set only the project URL and **anon** key:
 

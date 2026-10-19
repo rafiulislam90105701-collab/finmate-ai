@@ -4,7 +4,7 @@
 
 FinMate AI is a personal-finance workspace for recording income and spending, planning bills and category budgets, tracking savings goals, and viewing a transparent month-end estimate. It is an organisation and education tool, not financial advice.
 
-**Live website:** https://finmate-ai-iota.vercel.app/
+**Live website:** https://finmate-ai-78a4.vercel.app/
 
 Two modes are intentionally available:
 
@@ -136,7 +136,7 @@ An export is a convenience file, not an encrypted backup service. Store it caref
 
 ## Access from another device
 
-1. On the other phone, tablet, or computer, open https://finmate-ai-iota.vercel.app/ in a modern browser.
+1. On the other phone, tablet, or computer, open https://finmate-ai-78a4.vercel.app/ in a modern browser.
 2. Sign in with the **same account** to use the private cloud workspace.
 3. Wait for the workspace to load before adding or editing records.
 
