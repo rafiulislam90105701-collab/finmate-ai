@@ -2,6 +2,32 @@ export type AuthFlow = "sign-in" | "sign-up" | "verify" | "resend" | "reset" | "
 
 export const SIGNUP_RESEND_COOLDOWN_SECONDS = 60;
 
+type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+/** Persist non-secret verification metadata across tab replacement and reloads. */
+export function readPendingAuthValue(key: string, persistent: StorageLike, legacy: StorageLike) {
+  let value: string | null = null;
+  try { value = persistent.getItem(key); } catch { /* Continue with legacy storage. */ }
+  if (value !== null) return value;
+  try { value = legacy.getItem(key); } catch { return null; }
+  if (value !== null) {
+    try { persistent.setItem(key, value); } catch { /* Keep the current tab working. */ }
+  }
+  return value;
+}
+
+export function writePendingAuthValue(key: string, value: string, persistent: StorageLike, fallback: StorageLike) {
+  let stored = false;
+  try { persistent.setItem(key, value); stored = true; } catch { /* Fall back to tab storage. */ }
+  try { fallback.setItem(key, value); stored = true; } catch { /* Best effort when storage is restricted. */ }
+  return stored;
+}
+
+export function clearPendingAuthValue(key: string, persistent: StorageLike, legacy: StorageLike) {
+  try { persistent.removeItem(key); } catch { /* Continue clearing legacy storage. */ }
+  try { legacy.removeItem(key); } catch { /* Storage may be disabled by the browser. */ }
+}
+
 export type InitialAuthMode = "sign-in" | "sign-up" | "verify" | "reset" | "update-password";
 
 export function getInitialAuthMode(requestedMode: string | null, hasPendingVerification: boolean): InitialAuthMode {

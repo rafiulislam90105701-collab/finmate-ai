@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { getInitialAuthMode, getSafeAuthErrorMessage, getSignupEmailOtpParams, isEmailConfirmed, isSignupEmailConfirmationDisabled, isValidEmailOtp, remainingResendSeconds } from "@/lib/auth-validation";
+import { clearPendingAuthValue, getInitialAuthMode, getSafeAuthErrorMessage, getSignupEmailOtpParams, isEmailConfirmed, isSignupEmailConfirmationDisabled, isValidEmailOtp, readPendingAuthValue, remainingResendSeconds, writePendingAuthValue } from "@/lib/auth-validation";
+
+function memoryStorage(seed: Record<string, string> = {}) {
+  const values = new Map(Object.entries(seed));
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
+  };
+}
 
 describe("authentication validation", () => {
   it("resumes pending signup verification after the browser reloads", () => {
@@ -10,6 +19,26 @@ describe("authentication validation", () => {
     expect(getInitialAuthMode(null, true)).toBe("verify");
     expect(getInitialAuthMode("verify-email", false)).toBe("verify");
     expect(getInitialAuthMode("reset", true)).toBe("reset");
+  });
+
+  it("restores pending verification from persistent storage in a fresh tab", () => {
+    const persistent = memoryStorage();
+    const oldTab = memoryStorage();
+    writePendingAuthValue("pending-email", "person@example.com", persistent, oldTab);
+    const freshTab = memoryStorage();
+    const savedEmail = readPendingAuthValue("pending-email", persistent, freshTab);
+    expect(savedEmail).toBe("person@example.com");
+    expect(getInitialAuthMode("verify-email", Boolean(savedEmail))).toBe("verify");
+  });
+
+  it("migrates legacy session metadata and clears both storage scopes", () => {
+    const persistent = memoryStorage();
+    const legacy = memoryStorage({ "pending-email": "person@example.com" });
+    expect(readPendingAuthValue("pending-email", persistent, legacy)).toBe("person@example.com");
+    expect(persistent.getItem("pending-email")).toBe("person@example.com");
+    clearPendingAuthValue("pending-email", persistent, legacy);
+    expect(persistent.getItem("pending-email")).toBeNull();
+    expect(legacy.getItem("pending-email")).toBeNull();
   });
 
   it("uses only the server-provided confirmation timestamp", () => {
