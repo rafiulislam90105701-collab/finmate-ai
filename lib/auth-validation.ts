@@ -1,6 +1,15 @@
 export type AuthFlow = "sign-in" | "sign-up" | "verify" | "resend" | "reset" | "update";
 
 export const SIGNUP_RESEND_COOLDOWN_SECONDS = 60;
+export const AUTH_DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+export type ResumableAuthMode = "sign-in" | "sign-up" | "verify" | "verify-recovery" | "reset" | "update-password";
+export type AuthDraft = {
+  mode: ResumableAuthMode;
+  email: string;
+  name: string;
+  updatedAt: number;
+};
 
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -28,14 +37,76 @@ export function clearPendingAuthValue(key: string, persistent: StorageLike, lega
   try { legacy.removeItem(key); } catch { /* Storage may be disabled by the browser. */ }
 }
 
-export type InitialAuthMode = "sign-in" | "sign-up" | "verify" | "reset" | "update-password";
+export type InitialAuthMode = "sign-in" | "sign-up" | "verify" | "verify-recovery" | "reset" | "update-password";
 
-export function getInitialAuthMode(requestedMode: string | null, hasPendingVerification: boolean): InitialAuthMode {
+export function normalizeAuthMode(value: string | null): ResumableAuthMode | null {
+  if (value === "verify-email") return "verify";
+  if (value === "verify-recovery") return "verify-recovery";
+  if (value === "forgot-password") return "reset";
+  if (value === "sign-in" || value === "sign-up" || value === "verify" || value === "reset" || value === "update-password") return value;
+  return null;
+}
+
+export function authModeQueryValue(mode: ResumableAuthMode | "complete") {
+  if (mode === "verify") return "verify-email";
+  if (mode === "reset") return "forgot-password";
+  return mode === "complete" ? "sign-in" : mode;
+}
+
+export function getInitialAuthMode(requestedMode: string | null, hasPendingVerification: boolean, savedMode?: ResumableAuthMode | null): InitialAuthMode {
   if (requestedMode === "sign-in" || requestedMode === "reset" || requestedMode === "update-password") return requestedMode;
+  if (requestedMode === "forgot-password") return "reset";
   if (requestedMode === "verify-email") return "verify";
+  if (requestedMode === "verify-recovery") return "verify-recovery";
+  if (requestedMode === "verify") return "verify";
   if (requestedMode === "sign-up" && hasPendingVerification) return "verify";
   if (requestedMode === "sign-up") return "sign-up";
+  if (savedMode) return savedMode;
   return hasPendingVerification ? "verify" : "sign-in";
+}
+
+function isResumableMode(value: unknown): value is ResumableAuthMode {
+  return value === "sign-in" || value === "sign-up" || value === "verify" || value === "verify-recovery" || value === "reset" || value === "update-password";
+}
+
+/** Read only resumable, non-secret auth metadata. Drafts expire after 24 hours. */
+export function readAuthDraft(key: string, persistent: StorageLike, fallback: StorageLike, now = Date.now()): AuthDraft | null {
+  let raw: string | null = null;
+  try { raw = persistent.getItem(key); } catch { /* Use same-tab storage when durable storage is unavailable. */ }
+  if (raw === null) {
+    try { raw = fallback.getItem(key); } catch { return null; }
+  }
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Record<string, unknown>;
+    if (!isResumableMode(value.mode) || typeof value.updatedAt !== "number" || !Number.isFinite(value.updatedAt)) return null;
+    if (value.updatedAt > now || now - value.updatedAt > AUTH_DRAFT_MAX_AGE_MS) {
+      clearPendingAuthValue(key, persistent, fallback);
+      return null;
+    }
+    const draft: AuthDraft = {
+      mode: value.mode,
+      email: typeof value.email === "string" && value.email.length <= 320 ? value.email : "",
+      name: typeof value.name === "string" && value.name.length <= 80 ? value.name : "",
+      updatedAt: value.updatedAt,
+    };
+    return draft;
+  } catch {
+    clearPendingAuthValue(key, persistent, fallback);
+    return null;
+  }
+}
+
+/** Store only mode/email/name/timestamp; never pass password or OTP values here. */
+export function writeAuthDraft(key: string, draft: AuthDraft, persistent: StorageLike, fallback: StorageLike) {
+  const safeDraft: AuthDraft = {
+    mode: draft.mode,
+    email: draft.email.trim().slice(0, 320),
+    name: draft.name.trim().slice(0, 80),
+    updatedAt: draft.updatedAt,
+  };
+  const raw = JSON.stringify(safeDraft);
+  return writePendingAuthValue(key, raw, persistent, fallback);
 }
 
 export function isValidEmailOtp(value: string) {
@@ -44,6 +115,10 @@ export function isValidEmailOtp(value: string) {
 
 export function getSignupEmailOtpParams(email: string, token: string) {
   return { email: email.trim(), token, type: "email" } as const;
+}
+
+export function getRecoveryEmailOtpParams(email: string, token: string) {
+  return { email: email.trim(), token, type: "recovery" } as const;
 }
 
 export function remainingResendSeconds(lastSentAt: number | null, now = Date.now(), cooldownSeconds = SIGNUP_RESEND_COOLDOWN_SECONDS) {

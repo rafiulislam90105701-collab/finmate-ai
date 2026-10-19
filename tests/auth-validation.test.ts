@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { clearPendingAuthValue, getInitialAuthMode, getSafeAuthErrorMessage, getSignupEmailOtpParams, isEmailConfirmed, isSignupEmailConfirmationDisabled, isValidEmailOtp, readPendingAuthValue, remainingResendSeconds, writePendingAuthValue } from "@/lib/auth-validation";
+import { authModeQueryValue, clearPendingAuthValue, getInitialAuthMode, getRecoveryEmailOtpParams, getSafeAuthErrorMessage, getSignupEmailOtpParams, isEmailConfirmed, isSignupEmailConfirmationDisabled, isValidEmailOtp, readAuthDraft, readPendingAuthValue, remainingResendSeconds, writeAuthDraft, writePendingAuthValue } from "@/lib/auth-validation";
 
 function memoryStorage(seed: Record<string, string> = {}) {
   const values = new Map(Object.entries(seed));
@@ -37,6 +37,37 @@ describe("authentication validation", () => {
     const savedEmail = readPendingAuthValue("pending-email", persistent, freshTab);
     expect(savedEmail).toBeNull();
     expect(getInitialAuthMode("verify-email", Boolean(savedEmail))).toBe("verify");
+  });
+
+  it("restores a non-secret signup draft after an app background/reload", () => {
+    const persistent = memoryStorage();
+    const oldTab = memoryStorage();
+    writeAuthDraft("auth-draft", { mode: "sign-up", email: "person@example.com", name: "Fin User", updatedAt: 1000 }, persistent, oldTab);
+    const relaunchedTab = memoryStorage();
+    const draft = readAuthDraft("auth-draft", persistent, relaunchedTab, 2000);
+    expect(draft).toEqual({ mode: "sign-up", email: "person@example.com", name: "Fin User", updatedAt: 1000 });
+    expect(getInitialAuthMode("sign-up", false, draft?.mode)).toBe("sign-up");
+    expect(getInitialAuthMode(null, false, draft?.mode)).toBe("sign-up");
+  });
+
+  it("resumes verification with a blank email when app storage is unavailable", () => {
+    expect(getInitialAuthMode("verify-email", false)).toBe("verify");
+  });
+
+  it("uses stable URL modes and preserves explicit navigation over an older draft", () => {
+    expect(authModeQueryValue("verify")).toBe("verify-email");
+    expect(authModeQueryValue("reset")).toBe("forgot-password");
+    expect(getInitialAuthMode("sign-in", true, "sign-up")).toBe("sign-in");
+    expect(getInitialAuthMode("forgot-password", false, "sign-up")).toBe("reset");
+  });
+
+  it("expires auth drafts and serializes only non-secret fields", () => {
+    const persistent = memoryStorage();
+    const sameTab = memoryStorage();
+    writeAuthDraft("auth-draft", { mode: "sign-in", email: "person@example.com", name: "Fin User", updatedAt: 1000, password: "never-store", otp: "12345678" } as never, persistent, sameTab);
+    expect(persistent.getItem("auth-draft")).not.toContain("never-store");
+    expect(persistent.getItem("auth-draft")).not.toContain("12345678");
+    expect(readAuthDraft("auth-draft", persistent, sameTab, 1000 + 24 * 60 * 60 * 1000 + 1)).toBeNull();
   });
 
   it("migrates legacy session metadata and clears both storage scopes", () => {
@@ -90,6 +121,27 @@ describe("authentication validation", () => {
   it("uses Supabase's email verification type for six-digit signup OTPs", () => {
     expect(getSignupEmailOtpParams("  person@example.com  ", "123456"))
       .toEqual({ email: "person@example.com", token: "123456", type: "email" });
+  });
+
+  it("verifies password-recovery codes with Supabase's recovery OTP type", () => {
+    expect(getRecoveryEmailOtpParams(" person@example.com ", "12345678"))
+      .toEqual({ email: "person@example.com", token: "12345678", type: "recovery" });
+  });
+
+  it("keeps a code-based recovery template and server callback aligned", () => {
+    const template = readFileSync(new URL("../supabase/templates/recovery.html", import.meta.url), "utf8");
+    const callback = readFileSync(new URL("../app/auth/callback/route.ts", import.meta.url), "utf8");
+    expect(template).toContain("{{ .Token }}");
+    expect(template).not.toContain("{{ .ConfirmationURL }}");
+    expect(callback).toContain('"recovery"');
+    expect(callback).toContain("token_hash");
+  });
+
+  it("keeps auth navigation pages network-only so the service worker cannot replay stale forms", () => {
+    const serviceWorker = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
+    expect(serviceWorker).toContain('request.mode === "navigate"');
+    expect(serviceWorker).toContain("fetch(request).catch(() => caches.match(\"/offline\"))");
+    expect(serviceWorker).not.toMatch(/caches\.match\(request\).*navigate/);
   });
 
   it("keeps the local signup confirmation template on the six-digit token path", () => {
