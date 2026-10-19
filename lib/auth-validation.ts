@@ -6,8 +6,8 @@ export function isEmailConfirmed(user: VerifiableUser) {
   return Boolean(user?.email_confirmed_at);
 }
 
-export function normalizeOtp(value: string) {
-  return value.replace(/\D/g, "").slice(0, 6);
+export function getSignupNextStep(sessionAvailable: boolean, user: VerifiableUser): "workspace" | "confirm-email" {
+  return sessionAvailable && isEmailConfirmed(user) ? "workspace" : "confirm-email";
 }
 
 export function getSafeAuthErrorMessage(error: unknown, flow: AuthFlow) {
@@ -15,11 +15,12 @@ export function getSafeAuthErrorMessage(error: unknown, flow: AuthFlow) {
   if (/rate limit|too many requests|email rate|over_email_send_rate_limit/.test(message)) {
     return "For your security, wait a little before trying again.";
   }
-  if (flow === "verify") return "That code is incorrect or expired. Check it and try again, or request a new code.";
-  if (flow === "resend") return "We couldn't send another code right now. Wait a moment and try again.";
+  if (flow === "verify") return "That confirmation link is invalid or expired. Request a new confirmation email and try again.";
+  if (flow === "resend") return "We couldn't request another confirmation email right now. Wait a moment and try again.";
   if (flow === "sign-up" && /weak password|password should/.test(message)) {
     return "Choose a stronger password that meets the security requirements.";
   }
+  if (flow === "sign-in" && /email not confirmed|email_not_confirmed/.test(message)) return "Please confirm your email with the link we sent. You can request another confirmation email if needed.";
   if (flow === "reset") return "We couldn't start the password reset. Please try again shortly.";
   if (flow === "update") return "Your password couldn't be updated. Choose a stronger password and try again.";
   if (flow === "sign-up") return "We couldn't start the account. Check the details and try again.";
