@@ -117,7 +117,7 @@ export default function AuthPage() {
         setResendIn(RESEND_SECONDS);
         setOtp("");
         setMode("verify");
-        tell("If this address can receive a verification code, it will arrive shortly. Enter the six digits below.", "success");
+        tell("A verification email has been requested. Open it and tap the confirmation link; if it contains a six-digit code instead, enter it below.", "success");
       } else {
         const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password });
         if (error) throw error;
@@ -176,7 +176,7 @@ export default function AuthPage() {
       const { error } = await client.auth.resend({ email: email.trim(), type: "signup", options: { emailRedirectTo: callbackUrl("/app") } });
       if (error) throw error;
       setResendIn(RESEND_SECONDS);
-      tell("If this address can receive a verification code, a new message has been requested.", "success");
+      tell("A new verification email has been requested. Use its confirmation link, or enter the six-digit code if one is included.", "success");
     } catch (error) {
       tell(getSafeAuthErrorMessage(error, "resend"), "error");
     } finally {
@@ -221,7 +221,7 @@ export default function AuthPage() {
     <section className="auth-panel" aria-labelledby="auth-title">
       <Link href="/" className="back-link"><ArrowLeft size={16}/> Back to home</Link>
       <div className="brand"><span className="brand-mark">F</span>FinMate AI</div>
-      <div className="auth-heading"><span className="eyebrow">Private finance workspace</span><h1 id="auth-title">{titles[mode]}</h1><p>{mode === "verify" ? <>We sent a one-time code to <strong>{email || "your email address"}</strong>. Enter it to securely verify your account.</> : mode === "verified" ? "Your account is ready. We’re opening your workspace." : hasSupabaseConfig ? "Your financial data is protected by your account." : "Cloud authentication needs Supabase configuration. Demo data is fictional and local."}</p></div>
+      <div className="auth-heading"><span className="eyebrow">Private finance workspace</span><h1 id="auth-title">{titles[mode]}</h1><p>{mode === "verify" ? <>We requested a verification email for <strong>{email || "your email address"}</strong>. If it contains a confirmation link, tap it to finish signing up. If it contains a six-digit code, enter it below.</> : mode === "verified" ? "Your account is ready. We’re opening your workspace." : hasSupabaseConfig ? "Your financial data is protected by your account." : "Cloud authentication needs Supabase configuration. Demo data is fictional and local."}</p></div>
 
       {mode === "verify" ? <form className="auth-form" onSubmit={verifyCode}>
         <label>Email address<input autoComplete="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>
