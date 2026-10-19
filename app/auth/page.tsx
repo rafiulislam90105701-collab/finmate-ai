@@ -21,6 +21,7 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [otp, setOtp] = useState("");
+  const latestOtp = useRef(otp);
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState("");
   const [messageKind, setMessageKind] = useState<"error" | "success" | "info">("info");
@@ -51,6 +52,14 @@ export default function AuthPage() {
     const timer = window.setTimeout(() => setResendIn((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearTimeout(timer);
   }, [resendIn]);
+
+  useEffect(() => {
+    latestOtp.current = otp;
+  }, [otp]);
+
+  useEffect(() => {
+    if (mode === "verify") otpRefs.current[normalizeOtp(latestOtp.current).length]?.focus();
+  }, [mode]);
 
   useEffect(() => {
     if (mode !== "verified") return;
@@ -111,20 +120,10 @@ export default function AuthPage() {
         tell("If this address can receive a verification code, it will arrive shortly. Enter the six digits below.", "success");
       } else {
         const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password });
-        if (error) {
-          if ((error as Error & { code?: string }).code === "email_not_confirmed") {
-            sessionStorage.setItem(PENDING_EMAIL, email.trim());
-            setMode("verify");
-            tell("This account needs email verification. Request a new code below.", "info");
-            return;
-          }
-          throw error;
-        }
+        if (error) throw error;
         if (!isEmailConfirmed(data.user)) {
           await client.auth.signOut({ scope: "local" });
-          sessionStorage.setItem(PENDING_EMAIL, email.trim());
-          setMode("verify");
-          tell("This account needs email verification. Request a new code below.", "info");
+          tell("We couldn't verify those sign-in details. If you still need to verify your email, request a code below.", "error");
           return;
         }
         location.replace("/app");
@@ -225,11 +224,12 @@ export default function AuthPage() {
       <div className="auth-heading"><span className="eyebrow">Private finance workspace</span><h1 id="auth-title">{titles[mode]}</h1><p>{mode === "verify" ? <>We sent a one-time code to <strong>{email || "your email address"}</strong>. Enter it to securely verify your account.</> : mode === "verified" ? "Your account is ready. We’re opening your workspace." : hasSupabaseConfig ? "Your financial data is protected by your account." : "Cloud authentication needs Supabase configuration. Demo data is fictional and local."}</p></div>
 
       {mode === "verify" ? <form className="auth-form" onSubmit={verifyCode}>
+        <label>Email address<input autoComplete="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>
         <label className="otp-label">Six-digit verification code</label>
         <div className="otp-inputs" role="group" aria-label="Six-digit verification code">
           {Array.from({ length: 6 }, (_, index) => <input key={index} ref={(el) => { otpRefs.current[index] = el; }} aria-label={`Code digit ${index + 1}`} autoComplete={index === 0 ? "one-time-code" : "off"} inputMode="numeric" pattern="[0-9]*" maxLength={6} value={otp[index] ?? ""} onChange={(event) => changeOtp(index, event.target.value)} onPaste={pasteOtp} onKeyDown={(event) => { if (event.key === "Backspace" && !otp[index] && index > 0) otpRefs.current[index - 1]?.focus(); if (event.key === "ArrowLeft" && index > 0) otpRefs.current[index - 1]?.focus(); if (event.key === "ArrowRight" && index < 5) otpRefs.current[index + 1]?.focus(); }} />)}
         </div>
-        <button className="button primary full" disabled={busy}>{busy ? "Verifying…" : "Verify email"}</button>
+        <button className="button primary full" disabled={busy || normalizeOtp(otp).length !== 6}>{busy ? "Verifying…" : "Verify email"}</button>
         <div className="verify-actions"><button type="button" disabled={busy || resendIn > 0} onClick={() => void resendCode()}>{resendIn ? `Resend code in ${resendIn}s` : "Resend code"}</button><button type="button" disabled={busy} onClick={() => { sessionStorage.removeItem(PENDING_EMAIL); setEmail(""); setOtp(""); switchMode("sign-up"); }}>Change email</button></div>
       </form> : mode === "verified" ? <div className="verified-state"><span className="verified-icon"><Check size={29}/></span><p>Email confirmed securely with Supabase.</p></div> : <form className="auth-form" onSubmit={submit}>
         {mode === "sign-up" && <label>Full name <span className="optional-label">(optional)</span><input autoComplete="name" maxLength={80} value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" /></label>}
@@ -240,7 +240,7 @@ export default function AuthPage() {
       </form>}
 
       {message && <p className={`form-message ${messageKind}`} role={messageKind === "error" ? "alert" : "status"}>{message}</p>}
-      {mode !== "verify" && mode !== "verified" && <div className="auth-switch">{mode === "sign-in" && <><button type="button" onClick={() => switchMode("reset")}>Forgot password?</button><span>·</span><button type="button" onClick={() => switchMode("sign-up")}>Create an account</button></>}{mode === "sign-up" && <button type="button" onClick={() => switchMode("sign-in")}>Already have an account? Sign in</button>}{(mode === "reset" || mode === "update-password") && <button type="button" onClick={() => switchMode("sign-in")}>Back to sign in</button>}</div>}
+      {mode !== "verify" && mode !== "verified" && <div className="auth-switch">{mode === "sign-in" && <><button type="button" onClick={() => switchMode("reset")}>Forgot password?</button><span>·</span><button type="button" onClick={() => switchMode("sign-up")}>Create an account</button><button className="verify-entry" type="button" onClick={() => { switchMode("verify"); tell("If this address needs verification, request a code below. We won't reveal account status.", "info"); }}>Need a verification code?</button></>}{mode === "sign-up" && <button type="button" onClick={() => switchMode("sign-in")}>Already have an account? Sign in</button>}{(mode === "reset" || mode === "update-password") && <button type="button" onClick={() => switchMode("sign-in")}>Back to sign in</button>}</div>}
       {mode === "sign-in" && <div className="demo-box"><LockKeyhole size={18}/><div><strong>Just looking around?</strong><p>Explore fictional figures in a separate local demo—no real financial data or account sync.</p><Link className="button secondary" href="/app?demo=1">Open demo</Link></div></div>}
       <div className="auth-trust"><ShieldCheck size={15}/><span>Private by design · Your account data stays yours</span></div>
       <div className="auth-signup-note"><Mail size={14}/> Verification is handled securely by your account provider.</div>
