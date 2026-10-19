@@ -3,9 +3,10 @@ import { readFileSync } from "node:fs";
 import { getInitialAuthMode, getSafeAuthErrorMessage, getSignupEmailOtpParams, isEmailConfirmed, isSignupEmailConfirmationDisabled, isValidEmailOtp, remainingResendSeconds } from "@/lib/auth-validation";
 
 describe("authentication validation", () => {
-  it("gives explicit sign-in and signup navigation priority over stale verification state", () => {
+  it("resumes pending signup verification after the browser reloads", () => {
     expect(getInitialAuthMode("sign-in", true)).toBe("sign-in");
-    expect(getInitialAuthMode("sign-up", true)).toBe("sign-up");
+    expect(getInitialAuthMode("sign-up", true)).toBe("verify");
+    expect(getInitialAuthMode("sign-up", false)).toBe("sign-up");
     expect(getInitialAuthMode(null, true)).toBe("verify");
     expect(getInitialAuthMode("verify-email", false)).toBe("verify");
     expect(getInitialAuthMode("reset", true)).toBe("reset");
@@ -36,9 +37,12 @@ describe("authentication validation", () => {
       .toBe("We couldn't verify those sign-in details. Check your email and password, or reset your password.");
   });
 
-  it("validates six-digit email codes and gives safe feedback for invalid codes and rate limits", () => {
+  it("accepts configured Supabase email OTP lengths and gives safe feedback", () => {
     expect(isValidEmailOtp("123456")).toBe(true);
+    expect(isValidEmailOtp("12345678")).toBe(true);
+    expect(isValidEmailOtp("1234567890")).toBe(true);
     expect(isValidEmailOtp("12345")).toBe(false);
+    expect(isValidEmailOtp("12345678901")).toBe(false);
     expect(isValidEmailOtp("12345x")).toBe(false);
     expect(getSafeAuthErrorMessage(new Error("token expired"), "verify"))
       .toContain("code is invalid or expired");

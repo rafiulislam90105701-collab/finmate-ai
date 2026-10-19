@@ -54,6 +54,10 @@ export default function AuthPage() {
   }, []);
 
   function switchMode(next: Mode) {
+    if (next === "sign-up") {
+      sessionStorage.removeItem(PENDING_EMAIL);
+      sessionStorage.removeItem(RESEND_SENT_AT);
+    }
     setMode(next);
     setOtp("");
     tell("");
@@ -93,7 +97,9 @@ export default function AuthPage() {
         });
         if (error) throw error;
         if (data.user?.identities?.length === 0) {
-          tell("If this address already has an account, sign in or use Forgot password. Otherwise check your email for a verification code.", "info");
+          setEmail(email.trim());
+          setMode("sign-in");
+          tell("We couldn't start a new signup. Try signing in or use Forgot password. If you still need to verify an account, choose “Need a verification code?”.", "info");
           return;
         }
         if (isSignupEmailConfirmationDisabled(Boolean(data.session), data.user)) {
@@ -104,10 +110,13 @@ export default function AuthPage() {
         }
         sessionStorage.setItem(PENDING_EMAIL, email.trim());
         sessionStorage.setItem(RESEND_SENT_AT, String(Date.now()));
+        const verifyUrl = new URL(window.location.href);
+        verifyUrl.searchParams.set("mode", "verify-email");
+        window.history.replaceState(window.history.state, "", verifyUrl);
         setResendIn(SIGNUP_RESEND_COOLDOWN_SECONDS);
         setMode("verify");
         setOtp("");
-        tell("A verification code was requested. Enter the six-digit code from your email to finish creating your account.", "success");
+        tell("A verification code was requested. Enter the code exactly as shown in your email to finish creating your account.", "success");
       } else {
         const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password });
         if (error) throw error;
@@ -115,7 +124,7 @@ export default function AuthPage() {
           sessionStorage.setItem(PENDING_EMAIL, email.trim());
           setMode("verify");
           setResendIn(0);
-          tell("Enter the six-digit code sent to your email. You can request another code below.", "info");
+          tell("Enter the verification code sent to your email. You can request another code below.", "info");
           return;
         }
         location.replace("/app");
@@ -136,7 +145,7 @@ export default function AuthPage() {
   async function verifyCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busyRef.current || !isValidEmailOtp(otp)) {
-      if (!isValidEmailOtp(otp)) tell("Enter the six-digit code from your email.", "error");
+      if (!isValidEmailOtp(otp)) tell("Enter the complete verification code from your email (6–10 digits).", "error");
       return;
     }
     const client = getSupabaseBrowserClient();
@@ -218,7 +227,7 @@ export default function AuthPage() {
     <section className="auth-panel" aria-labelledby="auth-title">
       <Link href="/" className="back-link"><ArrowLeft size={16}/> Back to home</Link>
       <div className="brand"><span className="brand-mark">F</span>FinMate AI</div>
-      <div className="auth-heading"><span className="eyebrow">Private finance workspace</span><h1 id="auth-title">{titles[mode]}</h1><p>{mode === "verify" ? <>We requested a verification code for <strong>{email || "your email address"}</strong>. Enter the six digits to finish signing up and securely open your workspace.</> : mode === "complete" ? "Your email address is confirmed. Your account is ready to use." : hasSupabaseConfig ? "Your financial data is protected by your account." : "Cloud authentication needs Supabase configuration. Demo data is fictional and local."}</p></div>
+      <div className="auth-heading"><span className="eyebrow">Private finance workspace</span><h1 id="auth-title">{titles[mode]}</h1><p>{mode === "verify" ? <>We requested a verification code for <strong>{email || "your email address"}</strong>. Enter the complete code to finish signing up and securely open your workspace.</> : mode === "complete" ? "Your email address is confirmed. Your account is ready to use." : hasSupabaseConfig ? "Your financial data is protected by your account." : "Cloud authentication needs Supabase configuration. Demo data is fictional and local."}</p></div>
 
       {mode === "complete" ? <div className="auth-form">
         <button className="button primary full" type="button" onClick={() => location.assign("/app")}>Go to dashboard</button>
@@ -226,8 +235,8 @@ export default function AuthPage() {
       </div> : mode === "verify" ? <form className="auth-form" onSubmit={verifyCode}>
         <label>Email address<input autoComplete="email" required type="email" value={email} readOnly aria-describedby="verification-email-hint" placeholder="you@example.com" /></label>
         <span id="verification-email-hint" className="password-hint">To use a different address, choose “Change email” and restart signup.</span>
-        <label>Six-digit verification code<input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} minLength={6} required value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" aria-label="Six-digit verification code" /></label>
-        <p className="password-hint">Enter the code from the email to verify your address. Codes expire; request a new one if needed.</p>
+        <label>Verification code<input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6,10}" maxLength={10} minLength={6} required value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="Enter email code" aria-label="Email verification code" /></label>
+        <p className="password-hint">Enter all digits exactly as shown in the email. Codes expire; request a new one if needed.</p>
         <button className="button primary full" disabled={busy || !isValidEmailOtp(otp)}>{busy ? "Verifying…" : "Verify email"}</button>
         <div className="verify-actions"><button type="button" disabled={busy || resendIn > 0} onClick={() => void resendConfirmation()}>{resendIn ? "Resend code in " + resendIn + "s" : "Resend verification code"}</button><button type="button" disabled={busy} onClick={() => { sessionStorage.removeItem(PENDING_EMAIL); sessionStorage.removeItem(RESEND_SENT_AT); setEmail(""); setOtp(""); switchMode("sign-up"); }}>Change email</button></div>
       </form> : <form className="auth-form" onSubmit={submit}>
