@@ -31,6 +31,14 @@ describe("authentication validation", () => {
     expect(getInitialAuthMode("verify-email", Boolean(savedEmail))).toBe("verify");
   });
 
+  it("keeps the verification recovery route available when pending email storage is empty", () => {
+    const persistent = memoryStorage();
+    const freshTab = memoryStorage();
+    const savedEmail = readPendingAuthValue("pending-email", persistent, freshTab);
+    expect(savedEmail).toBeNull();
+    expect(getInitialAuthMode("verify-email", Boolean(savedEmail))).toBe("verify");
+  });
+
   it("migrates legacy session metadata and clears both storage scopes", () => {
     const persistent = memoryStorage();
     const legacy = memoryStorage({ "pending-email": "person@example.com" });

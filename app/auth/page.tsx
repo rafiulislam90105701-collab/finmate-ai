@@ -144,10 +144,9 @@ export default function AuthPage() {
 
   async function verifyCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busyRef.current || !isValidEmailOtp(otp)) {
-      if (!isValidEmailOtp(otp)) tell("Enter the complete verification code from your email (6–10 digits).", "error");
-      return;
-    }
+    if (busyRef.current) return;
+    if (!validEmail(email)) { tell("Enter the email address used to create your account.", "error"); return; }
+    if (!isValidEmailOtp(otp)) { tell("Enter the complete verification code from your email (6–10 digits).", "error"); return; }
     const client = getSupabaseBrowserClient();
     if (!client) { tell("Cloud verification is not configured in this preview.", "error"); return; }
     busyRef.current = true;
@@ -192,9 +191,11 @@ export default function AuthPage() {
   }
 
   async function resendConfirmation() {
-    if (busyRef.current || resendIn > 0 || !validEmail(email)) return;
+    if (busyRef.current || resendIn > 0) return;
+    if (!validEmail(email)) { tell("Enter the email address used to create your account first.", "error"); return; }
     const client = getSupabaseBrowserClient();
     if (!client) { tell("Cloud verification is not configured in this preview.", "error"); return; }
+    writePendingAuthValue(PENDING_EMAIL, email.trim(), localStorage, sessionStorage);
     busyRef.current = true;
     setBusy(true);
     tell("");
@@ -233,8 +234,8 @@ export default function AuthPage() {
         <button className="button primary full" type="button" onClick={() => location.assign("/app")}>Go to dashboard</button>
         <button className="button secondary full" type="button" disabled={busy} onClick={() => void signOutToSignIn()}>{busy ? "Signing out…" : "Sign out and go to sign in"}</button>
       </div> : mode === "verify" ? <form className="auth-form" onSubmit={verifyCode}>
-        <label>Email address<input autoComplete="email" required type="email" value={email} readOnly aria-describedby="verification-email-hint" placeholder="you@example.com" /></label>
-        <span id="verification-email-hint" className="password-hint">To use a different address, choose “Change email” and restart signup.</span>
+        <label>Email address<input autoComplete="email" required type="email" value={email} readOnly={Boolean(email)} onChange={(event) => { const nextEmail = event.target.value; setEmail(nextEmail); if (validEmail(nextEmail)) writePendingAuthValue(PENDING_EMAIL, nextEmail.trim(), localStorage, sessionStorage); }} aria-describedby="verification-email-hint" placeholder="you@example.com" /></label>
+        <span id="verification-email-hint" className="password-hint">{email ? "To use a different address, choose “Change email” and restart signup." : "Enter the email address used to create your account, then request another code if needed."}</span>
         <label>Verification code<input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6,10}" maxLength={10} minLength={6} required value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="Enter email code" aria-label="Email verification code" /></label>
         <p className="password-hint">Enter all digits exactly as shown in the email. Codes expire; request a new one if needed.</p>
         <button className="button primary full" disabled={busy || !isValidEmailOtp(otp)}>{busy ? "Verifying…" : "Verify email"}</button>
