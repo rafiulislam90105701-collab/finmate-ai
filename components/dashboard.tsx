@@ -21,7 +21,8 @@ import type { Activity, Bill, Budget, Category, Currency, FinanceState, Recurrin
 type Section = "overview" | "transactions" | "budgets" | "bills" | "goals" | "assistant" | "activity" | "settings";
 type ModalState = { kind: "transaction"; record?: Transaction } | { kind: "confirm-delete"; type: "transaction"; id: string; label: string } | null;
 type WorkspaceMode = "demo" | "cloud";
-type ChatMessage = { id: string; role: "assistant" | "user"; text: string; source?: string };
+type PendingAction = { request_id: string; entity: "transaction" | "bill" | "budget" | "savings_goal"; operation: "create" | "update"; record_id?: string; fields: Record<string, unknown> };
+type ChatMessage = { id: string; role: "assistant" | "user"; text: string; source?: string; pendingAction?: PendingAction; actionStatus?: "pending" | "saving" | "saved" | "cancelled"; actionError?: string };
 const storageKey = "finmate-fictional-demo-v1";
 const navigation: { id: Section; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard }, { id: "transactions", label: "Transactions", icon: ReceiptText }, { id: "budgets", label: "Budgets", icon: Target }, { id: "bills", label: "Bills", icon: CalendarClock }, { id: "goals", label: "Savings goals", icon: Goal }, { id: "assistant", label: "FinMate AI", icon: Sparkles }, { id: "activity", label: "Activity", icon: ClipboardList }
@@ -332,7 +333,7 @@ function AssistantMarkdown({ text }: { text: string }) {
 }
 
 function Assistant({ state, mode, forecast, progress, messages, onMessagesChange, onMutate, onRefreshCloud }: { state: FinanceState; mode: WorkspaceMode; forecast: ReturnType<typeof calculateForecast>; progress: ReturnType<typeof budgetProgress>; messages: ChatMessage[]; onMessagesChange: Dispatch<SetStateAction<ChatMessage[]>>; onMutate: (recipe: (current: FinanceState) => FinanceState, success?: string) => void; onRefreshCloud: () => Promise<void> }) {
-  const [question, setQuestion] = useState(""); const [busy, setBusy] = useState(false); const [proposal, setProposal] = useState<{ budgetId: string; currentMinor: number; proposedMinor: number; category: string } | null>(null); const inFlight = useRef(false);
+  const [question, setQuestion] = useState(""); const [busy, setBusy] = useState(false); const [actionBusyId, setActionBusyId] = useState(""); const [proposal, setProposal] = useState<{ budgetId: string; currentMinor: number; proposedMinor: number; category: string } | null>(null); const inFlight = useRef(false);
   const appendMessage = (message: ChatMessage) => onMessagesChange((rows) => [...rows, message].slice(-24));
   const assistantContext = useMemo(() => { const spending = spendingByCategory(state.transactions,forecast.month); return { categorySpending: state.categories.map((category) => ({ name:category.name,amountMinor:spending[category.id] ?? 0 })), upcomingBills:state.bills.filter((bill) => !bill.paidAt).sort((a,b) => a.dueDate.localeCompare(b.dueDate)).slice(0,10).map((bill) => ({ name:bill.name,amountMinor:bill.amountMinor,dueDate:bill.dueDate })), budgets:progress.map((budget) => ({ category:categoryName(state.categories,budget.categoryId),amountMinor:budget.amountMinor,spentMinor:budget.spentMinor })), goals:state.goals.map((goal) => ({ name:goal.name,targetMinor:goal.targetMinor,savedMinor:goal.savedMinor,targetDate:goal.targetDate })) }; },[forecast.month,progress,state.bills,state.categories,state.goals,state.transactions]);
   async function ask(event: FormEvent) {
@@ -340,14 +341,14 @@ function Assistant({ state, mode, forecast, progress, messages, onMessagesChange
     const history = messages.slice(-10).map((message) => ({ role:message.role,content:message.text }));
     inFlight.current = true; setQuestion(""); appendMessage({id:uid(),role:"user",text}); setBusy(true);
     try {
-      let result: { answer?: string; mode?: string; providerStatus?: string } | null = null;
+      let result: { answer?: string; mode?: string; providerStatus?: string; pendingAction?: PendingAction } | null = null;
       // For a signed-in cloud workspace, the Edge Function verifies the caller JWT
       // and queries only RLS-authorized rows. The browser never supplies a ledger.
       if (mode === "cloud") {
         const client = getSupabaseBrowserClient();
         if (client) {
           const edge = await client.functions.invoke("finance-assistant", { body: { question: text, month: forecast.month, history } });
-          if (!edge.error && edge.data && typeof edge.data === "object") result = edge.data as { answer?: string; mode?: string; providerStatus?: string };
+          if (!edge.error && edge.data && typeof edge.data === "object") result = edge.data as { answer?: string; mode?: string; providerStatus?: string; pendingAction?: PendingAction };
         }
       }
       // Demo can use the app route with fictional figures. A signed-in cloud
@@ -359,14 +360,71 @@ function Assistant({ state, mode, forecast, progress, messages, onMessagesChange
       }
       const localFallback = answerRulesBasedAssistant({ question:text,summary:{availableBalanceMinor:forecast.availableBalanceMinor,projectedBalanceMinor:forecast.projectedBalanceMinor,unpaidBillsMinor:forecast.unpaidBillsMinor,expectedRemainingMinor:forecast.expectedRemainingMinor,shortfall:forecast.shortfall},currency:state.profile.currency,context:assistantContext });
       const source = result?.mode === "ai" ? "Groq AI" : result?.providerStatus === "deterministic-budget-status" ? "Recorded budget data" : result?.providerStatus === "demo-rules-only" ? "Fictional demo · rules-based, no external AI" : result?.providerStatus === "rate-limited" ? "Rules-based fallback — provider rate limit" : result?.providerStatus === "not-configured" ? "Rules-based fallback — AI provider not configured" : result?.providerStatus === "unavailable" ? "Rules-based fallback — provider unavailable" : "Rules-based fallback";
-      appendMessage({id:uid(),role:"assistant",text:result?.answer || localFallback,source});
+      appendMessage({id:uid(),role:"assistant",text:result?.answer || localFallback,source,...(mode === "cloud" && result?.pendingAction ? { pendingAction:result.pendingAction, actionStatus:"pending" as const } : {})});
     } catch { appendMessage({id:uid(),role:"assistant",text:answerRulesBasedAssistant({ question:text,summary:{availableBalanceMinor:forecast.availableBalanceMinor,projectedBalanceMinor:forecast.projectedBalanceMinor,unpaidBillsMinor:forecast.unpaidBillsMinor,expectedRemainingMinor:forecast.expectedRemainingMinor,shortfall:forecast.shortfall},currency:state.profile.currency,context:assistantContext }),source:"Rules-based fallback — assistant connection unavailable"}); }
     finally { inFlight.current = false; setBusy(false); }
+  }
+  async function confirmAiAction(messageId: string) {
+    const message = messages.find((item) => item.id === messageId);
+    if (!message?.pendingAction || message.actionStatus !== "pending" || mode !== "cloud" || actionBusyId) return;
+    const action = message.pendingAction;
+    setActionBusyId(messageId);
+    onMessagesChange((rows) => rows.map((item) => item.id === messageId ? { ...item, actionStatus:"saving", actionError:undefined } : item));
+    let databaseConfirmed = false;
+    try {
+      const client = getSupabaseBrowserClient();
+      if (!client) throw new Error("Cloud connection unavailable.");
+      const { data, error } = await client.functions.invoke("finance-action", { body: { confirmed:true, action } });
+      if (error || !data || data.success !== true) throw new Error("The server did not confirm the save.");
+      databaseConfirmed = true;
+      onMessagesChange((rows) => rows.map((item) => item.id === messageId ? { ...item, actionStatus:"saved", actionError:undefined } : item));
+      try { await onRefreshCloud(); }
+      catch {
+        onMessagesChange((rows) => rows.map((item) => item.id === messageId ? { ...item, actionStatus:"saved", actionError:"The server saved this change, but the workspace could not refresh. Reload before making another edit." } : item));
+      }
+      appendMessage({ id:uid(), role:"assistant", text:"Confirmed. The server saved your change. The workspace has been refreshed when the connection allowed it.", source:"Server-confirmed action" });
+    } catch {
+      onMessagesChange((rows) => rows.map((item) => item.id === messageId ? { ...item, actionStatus:databaseConfirmed ? "saved" : "pending", actionError:databaseConfirmed ? "The server saved this change, but the workspace could not refresh. Reload before making another edit." : "Not saved. Check your connection and try again; no success was reported." } : item));
+    } finally { setActionBusyId(""); }
+  }
+  function cancelAiAction(messageId: string) {
+    onMessagesChange((rows) => rows.map((item) => item.id === messageId && item.actionStatus === "pending" ? { ...item, actionStatus:"cancelled", actionError:undefined } : item));
+  }
+  function updateActionField(messageId: string, key: string, value: unknown) {
+    onMessagesChange((rows) => rows.map((item) => item.id === messageId && item.actionStatus === "pending" && item.pendingAction
+      ? { ...item, pendingAction:{ ...item.pendingAction, fields:{ ...item.pendingAction.fields, [key]:value } }, actionError:undefined }
+      : item));
   }
   const insights = buildInsights(forecast,state.profile.currency,state);
   function draftProposal() { const candidate = [...progress].sort((a,b) => b.percent - a.percent)[0]; if (!candidate) { appendMessage({id:uid(),role:"assistant",text:"Create a category budget first; then I can prepare a change for your review.",source:"Rules-based fallback"}); return; } const current = candidate.amountMinor; setProposal({budgetId:candidate.id,currentMinor:current,proposedMinor:Math.max(0,Math.round(current * .9)),category:categoryName(state.categories,candidate.categoryId)}); }
   async function approveProposal() { if (!proposal) return; const approved = proposal; try { if (mode === "cloud") { const client = getSupabaseBrowserClient(); if (!client) throw new Error("Cloud connection unavailable."); const { error } = await client.rpc("approve_budget_proposal", { p_budget_id: approved.budgetId, p_proposed_minor: approved.proposedMinor, p_reason: `${approved.category} budget changed after explicit review.` }); if (error) throw error; await onRefreshCloud(); } else { onMutate((current) => withActivity({ ...current, budgets:current.budgets.map((item) => item.id === approved.budgetId ? {...item,amountMinor:approved.proposedMinor} : item) },activity("AI budget proposal approved",`${approved.category} budget changed from ${formatMoney(approved.currentMinor,current.profile.currency)} to ${formatMoney(approved.proposedMinor,current.profile.currency)} after review.`)), "Budget proposal applied"); } appendMessage({id:uid(),role:"assistant",text:`You approved the ${approved.category} budget change. The dashboard has been recalculated.`,source:"Confirmed action"}); setProposal(null); } catch { appendMessage({id:uid(),role:"assistant",text:"The budget change was not saved. Review your connection and try again; no local change was applied.",source:"Safe failure"}); } }
-  return <section className="section-page"><div className="page-head"><div><h1>FinMate AI</h1><p>Clear explanations and reviewable suggestions—not financial advice.</p></div></div><div className="assistant-layout"><article className="card chat"><div className="card-head"><div><h2>Money conversation</h2><p>Uses the current workspace summary. It never changes data by itself.</p></div><Bot size={21} color="#477d71"/></div>{messages.map((message) => <div className={`message ${message.role === "user" ? "user" : ""}`} key={message.id}>{message.role === "assistant" ? <AssistantMarkdown text={message.text}/> : message.text}{message.source && <small>{message.source}</small>}</div>)}{busy && <div className="message">Thinking through the figures…</div>}<form className="ask-form" onSubmit={ask}><input value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={700} placeholder="How do upcoming bills affect me?" aria-label="Ask FinMate AI"/><button className="button primary" disabled={busy}>Ask</button></form></article><aside className="card"><div className="card-head"><div><h2>Signals</h2><p>Based on your recorded data</p></div></div><div className="insight-list">{insights.map((insight) => <div key={insight.title} className={`insight ${insight.tone}`}><strong>{insight.title}</strong><p>{insight.body}</p></div>)}</div><button className="button secondary full" style={{marginTop:14}} onClick={draftProposal}><Sparkles size={15}/>Draft a budget change</button>{proposal && <div className="proposal" style={{marginTop:13}}><strong>Review proposed change</strong><p>Reduce the {proposal.category} budget from {formatMoney(proposal.currentMinor,state.profile.currency)} to {formatMoney(proposal.proposedMinor,state.profile.currency)}. This changes your budget plan only; it does not change past spending.</p><div className="proposal-actions"><button className="button primary" onClick={approveProposal}>Approve change</button><button className="button secondary" onClick={() => setProposal(null)}>Reject</button></div></div>}</aside></div></section>;
+  return <section className="section-page"><div className="page-head"><div><h1>FinMate AI</h1><p>Clear explanations and reviewable suggestions—not financial advice.</p></div></div><div className="assistant-layout"><article className="card chat"><div className="card-head"><div><h2>Money conversation</h2><p>Uses the current workspace summary. It never changes data by itself.</p></div><Bot size={21} color="#477d71"/></div>{messages.map((message) => <div className={`message ${message.role === "user" ? "user" : ""}`} key={message.id}>{message.role === "assistant" ? <AssistantMarkdown text={message.text}/> : message.text}{message.pendingAction && <div className="proposal" style={{marginTop:10}}><strong>Review {message.pendingAction.operation} {message.pendingAction.entity.replace("_", " ")}</strong><EditableActionProposal action={message.pendingAction} currency={state.profile.currency} disabled={message.actionStatus !== "pending" || Boolean(actionBusyId)} onChange={(key,value) => updateActionField(message.id,key,value)}/>{message.actionStatus === "pending" || message.actionStatus === "saving" ? <div className="proposal-actions"><button className="button primary" disabled={message.actionStatus === "saving" || Boolean(actionBusyId)} onClick={() => void confirmAiAction(message.id)}>{message.actionStatus === "saving" ? "Saving…" : "Confirm and save"}</button><button className="button secondary" disabled={message.actionStatus === "saving"} onClick={() => cancelAiAction(message.id)}>Cancel</button></div> : <p role="status">{message.actionStatus === "saved" ? "Saved and refreshed from your account." : "Cancelled. No changes were made."}</p>}{message.actionError && <p className="form-error" role="alert">{message.actionError}</p>}</div>}{message.source && <small>{message.source}</small>}</div>)}{busy && <div className="message">Thinking through the figures…</div>}<form className="ask-form" onSubmit={ask}><input value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={700} placeholder="How do upcoming bills affect me?" aria-label="Ask FinMate AI"/><button className="button primary" disabled={busy}>Ask</button></form></article><aside className="card"><div className="card-head"><div><h2>Signals</h2><p>Based on your recorded data</p></div></div><div className="insight-list">{insights.map((insight) => <div key={insight.title} className={`insight ${insight.tone}`}><strong>{insight.title}</strong><p>{insight.body}</p></div>)}</div><button className="button secondary full" style={{marginTop:14}} onClick={draftProposal}><Sparkles size={15}/>Draft a budget change</button>{proposal && <div className="proposal" style={{marginTop:13}}><strong>Review proposed change</strong><p>Reduce the {proposal.category} budget from {formatMoney(proposal.currentMinor,state.profile.currency)} to {formatMoney(proposal.proposedMinor,state.profile.currency)}. This changes your budget plan only; it does not change past spending.</p><div className="proposal-actions"><button className="button primary" onClick={approveProposal}>Approve change</button><button className="button secondary" onClick={() => setProposal(null)}>Reject</button></div></div>}</aside></div></section>;
+}
+
+function EditableActionProposal({ action, currency, disabled, onChange }: { action: PendingAction; currency: Currency; disabled: boolean; onChange: (key:string,value:unknown) => void }) {
+  const fields = action.fields;
+  const labels: Record<string, string> = { type:"Type", amount_minor:"Amount", target_minor:"Target", saved_minor:"Already saved", description:"Description", name:"Name", category_name:"Category", transaction_date:"Date", due_date:"Due date", month:"Month", target_date:"Target date", recurring:"Frequency", account:"Account", notes:"Notes", color:"Color" };
+  return <div className="proposal-fields">{Object.entries(fields).map(([key, value]) => {
+    const label = labels[key] ?? key;
+    const moneyField = ["amount_minor", "target_minor", "saved_minor"].includes(key);
+    const inputValue = moneyField && typeof value === "number" ? moneyFromMinor(value) : value === null ? "" : String(value);
+    const common = { "aria-label":label, disabled, value:inputValue, onChange:(event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      const raw = event.currentTarget.value;
+      if (moneyField) {
+        try { onChange(key, parseMoney(raw, currency)); }
+        catch { onChange(key, raw); }
+      } else if ((key === "target_date" || key === "account" || key === "notes") && raw === "") onChange(key, null);
+      else onChange(key, raw);
+    } };
+    let input: ReactNode;
+    if (key === "type") input = <select {...common}><option value="expense">Expense</option><option value="income">Income</option></select>;
+    else if (key === "recurring") input = <select {...common}><option value="none">One-time</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select>;
+    else if (["transaction_date", "due_date", "target_date"].includes(key)) input = <input {...common} type="date"/>;
+    else if (key === "month") input = <input {...common} type="month"/>;
+    else if (moneyField) input = <input {...common} type="number" min="0" step={10 ** -2}/>;
+    else input = <input {...common} type={key === "color" ? "color" : "text"} maxLength={key === "description" ? 120 : key === "category_name" ? 50 : 500}/>;
+    return <label className="proposal-field" key={key}>{label}{input}</label>;
+  })}</div>;
 }
 
 function ActivityLog({ state }: { state: FinanceState }) { return <section className="section-page"><div className="page-head"><div><h1>Activity history</h1><p>A concise record of meaningful actions in this demo workspace.</p></div></div><article className="card"><div className="activity-list">{state.activities.length ? state.activities.map((item) => <div className="activity" key={item.id}><i className="activity-dot"/><div><h3>{item.action}</h3><p>{item.detail}</p></div><time dateTime={item.createdAt}>{new Intl.DateTimeFormat("en-BD",{dateStyle:"medium",timeStyle:"short"}).format(new Date(item.createdAt))}</time></div>) : <Empty text="Actions such as edits, payments, and approved proposals appear here."/>}</div></article></section>; }

@@ -14,12 +14,12 @@ type AuthCompatibility = {
   signOut: (options?: { scope?: "global" | "local" | "others" }) => Promise<{ error: Error | null }>;
   signInWithPassword: (credentials: { email: string; password: string }) => Promise<{ data: { user: AuthUser | null; session: { user: AuthUser } | null }; error: AuthError | null }>;
   signUp: (credentials: { email: string; password: string; options?: { emailRedirectTo?: string; data?: Record<string, unknown> } }) => Promise<{ data: { user: AuthUser | null; session: { user: AuthUser } | null }; error: AuthError | null }>;
-  verifyOtp: (credentials: { email: string; token: string; type: "email" }) => Promise<{ data: { user: AuthUser | null; session: { user: AuthUser } | null }; error: AuthError | null }>;
+  verifyOtp: (credentials: { email: string; token: string; type: "signup" | "email" }) => Promise<{ data: { user: AuthUser | null; session: { user: AuthUser } | null }; error: AuthError | null }>;
   resend: (credentials: { email: string; type: "signup"; options?: { emailRedirectTo?: string } }) => Promise<{ error: AuthError | null }>;
   resetPasswordForEmail: (email: string, options?: { redirectTo?: string }) => Promise<{ error: Error | null }>;
   updateUser: (attributes: { password: string }) => Promise<{ error: Error | null }>;
 };
-type AuthUser = { id: string; email?: string; email_confirmed_at?: string | null; user_metadata?: Record<string, unknown> };
+type AuthUser = { id: string; email?: string; email_confirmed_at?: string | null; identities?: unknown[] | null; user_metadata?: Record<string, unknown> };
 type AuthError = Error & { code?: string; status?: number };
 export type FinMateSupabaseClient = SupabaseClient & { auth: AuthCompatibility };
 let browserClient: FinMateSupabaseClient | null = null;
