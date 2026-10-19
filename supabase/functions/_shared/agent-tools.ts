@@ -104,6 +104,92 @@ export function filterBudgetStatus<T extends { category: string }>(items: T[], c
   return category ? items.filter((item) => item.category.toLocaleLowerCase("en-US") === category) : items;
 }
 
+
+
+export type AgentBudgetStatusRow = {
+  category: string;
+  amountMinor: number;
+  spentMinor: number;
+  unpaidBillsMinor: number;
+  remainingMinor: number;
+};
+
+/**
+ * Return a deterministic answer for budget-status questions from recorded data.
+ * Return null for other questions so advice/scenario requests can still use the AI.
+ */
+export function buildDeterministicBudgetStatusAnswer(
+  question: string,
+  month: string,
+  currency: string,
+  categories: string[],
+  budgets: AgentBudgetStatusRow[],
+): string | null {
+  const lower = question.trim().toLocaleLowerCase("en-US");
+  const mentionsBudget = /\bbudgets?\b/.test(lower);
+  const asksStatus = /\b(status|overall|all categories|categories|category|limit|allocation|allocated|remaining|left|spent|spending|show|check|list|how much|what|this month|current month)\b/.test(lower);
+  const asksForChange = /\b(change|adjust|increase|decrease|reduce|cut|lower|create|update|propose|proposal|recommend|suggest|should i|how can i|what if|scenario|set up|set a budget)\b/.test(lower);
+  if (!mentionsBudget || !asksStatus || asksForChange) return null;
+
+  const parsedMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? new Date(month + "-01T12:00:00Z") : null;
+  const monthLabel = parsedMonth && !Number.isNaN(parsedMonth.getTime())
+    ? new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(parsedMonth)
+    : "the selected month";
+  const mentionedCategory = categories.find((category) =>
+    category.trim() && lower.includes(category.toLocaleLowerCase("en-US"))
+  );
+  const categoryBudget = mentionedCategory
+    ? budgets.find((item) => item.category.toLocaleLowerCase("en-US") === mentionedCategory.toLocaleLowerCase("en-US"))
+    : undefined;
+
+  if (mentionedCategory && !categoryBudget) {
+    return "No budget limit is set for " + mentionedCategory + " in " + monthLabel +
+      ". No budget allocation is recorded for that category; this does not mean your income or spending is zero.";
+  }
+
+  const rows = mentionedCategory && categoryBudget ? [categoryBudget] : budgets;
+  if (!rows.length) {
+    return "No budget categories or limits are set for " + monthLabel +
+      ". No budget allocations are recorded; this does not mean your income or spending is zero. " +
+      "Set a budget for each category you want to track.";
+  }
+
+  const formatMoney = (minor: number) => new Intl.NumberFormat("en-BD", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 2,
+  }).format(safeMinor(minor) / 100);
+  const lineFor = (row: AgentBudgetStatusRow) => {
+    const amount = safeMinor(row.amountMinor);
+    const spent = safeMinor(row.spentMinor);
+    const unpaid = safeMinor(row.unpaidBillsMinor);
+    const over = Math.max(0, spent + unpaid - amount);
+    return row.category + ": allocated " + formatMoney(amount) +
+      "; recorded spending " + formatMoney(spent) +
+      "; unpaid bills " + formatMoney(unpaid) +
+      "; remaining " + formatMoney(row.remainingMinor) +
+      (over > 0 ? "; over limit by " + formatMoney(over) : "") + ".";
+  };
+
+  if (mentionedCategory && categoryBudget) {
+    return "Budget status for " + mentionedCategory + " in " + monthLabel + ": " + lineFor(categoryBudget);
+  }
+
+  const total = (field: "amountMinor" | "spentMinor" | "unpaidBillsMinor" | "remainingMinor") =>
+    rows.reduce((sum, row) => sum + safeMinor(row[field]), 0);
+  const lines = [
+    "Overall budget status for " + monthLabel + ":",
+    "Total allocated: " + formatMoney(total("amountMinor")) + ".",
+    "Recorded spending against these budgets: " + formatMoney(total("spentMinor")) + ".",
+    "Unpaid bills in these budgeted categories: " + formatMoney(total("unpaidBillsMinor")) + ".",
+    "Remaining within the recorded limits: " + formatMoney(total("remainingMinor")) + ".",
+    "By category:",
+    ...rows.slice(0, 8).map(lineFor),
+  ];
+  if (rows.length > 8) lines.push("Plus " + (rows.length - 8) + " more budgeted categories.");
+  return lines.join("\n");
+}
+
 /** A read-only scenario estimate for hypothetical future discretionary spending. */
 export function simulateBudgetScenario(input: {
   question: string;
