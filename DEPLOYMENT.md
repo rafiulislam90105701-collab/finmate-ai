@@ -31,7 +31,7 @@ If Vercel's import screen says **No Git Repositories Found**, use its GitHub con
    - Under URL Configuration, set Site URL to the actual production HTTPS domain after deployment.
    - Add redirect URLs `https://YOUR_PRODUCTION_DOMAIN/auth/callback` and `http://localhost:3000/auth/callback`.
    - Under Email provider settings, enable **Confirm email**. FinMate refuses to create a signed-in session for an unverified account; the database policies also deny financial rows until Supabase records `email_confirmed_at`.
-   - Follow [the email OTP and SMTP setup guide](docs/auth-otp-setup.md). The app expects the Confirm signup email to include `{{ .Token }}` and verifies with `verifyOtp({ email, token, type: 'email' })`. Hosted email templates and SMTP settings are dashboard-managed; verify delivery using a real inbox before claiming OTP works.
+   - Follow [the email OTP and SMTP setup guide](docs/auth-otp-setup.md). The app expects the Confirm signup email to include `{{ .Token }}` and verifies signup codes with `verifyOtp({ email, token, type: 'signup' })`. Hosted email templates and SMTP settings are dashboard-managed; verify delivery using a real inbox before claiming OTP works.
    - The Supabase security advisor previously reported leaked-password protection disabled. Enable it in the Auth password-security settings if available for the project plan, then re-run the advisor. Never put SMTP or service-role credentials in the app.
 4. Verify RLS is enabled and test with two normal users. Do not use a shared demo user for financial information.
 
