@@ -4,7 +4,7 @@ import { ArrowRight, BadgeDollarSign, BrainCircuit, CalendarClock, ChartNoAxesCo
 const features = [
   { icon: ChartNoAxesCombined, title: "See the full picture", text: "Balances, cash flow, budgets, and forecasts in one calm daily view." },
   { icon: CalendarClock, title: "Plan for bills", text: "Reserve upcoming bills once—clearly, without double-counting them." },
-  { icon: BrainCircuit, title: "Thoughtful guidance", text: "Get transparent, rules-based insights without needing an AI key." },
+  { icon: BrainCircuit, title: "Thoughtful guidance", text: "Get transparent, rules-based guidance, with server-side AI when connected—no personal API key required." },
   { icon: ReceiptText, title: "A real ledger", text: "Add, edit, filter, and search every income and expense with confidence." },
   { icon: PiggyBank, title: "Make goals tangible", text: "Track savings progress and record every contribution deliberately." },
   { icon: LockKeyhole, title: "Privacy by design", text: "Demo data stays in this browser. Connected accounts use database ownership rules." }
