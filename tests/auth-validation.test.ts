@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getSafeAuthErrorMessage, getSignupNextStep, isEmailConfirmed } from "@/lib/auth-validation";
+import { getSafeAuthErrorMessage, getSignupNextStep, isEmailConfirmed, isValidEmailOtp } from "@/lib/auth-validation";
 
 describe("authentication validation", () => {
   it("uses only the server-provided confirmation timestamp", () => {
@@ -23,7 +23,10 @@ describe("authentication validation", () => {
       .toBe("We couldn't start the password reset. Please try again shortly.");
   });
 
-  it("gives link-safe feedback for expired confirmations and rate limits", () => {
+  it("validates six-digit email codes and gives safe feedback for invalid codes and rate limits", () => {
+    expect(isValidEmailOtp("123456")).toBe(true);
+    expect(isValidEmailOtp("12345")).toBe(false);
+    expect(isValidEmailOtp("12345x")).toBe(false);
     expect(getSafeAuthErrorMessage(new Error("token expired"), "verify"))
       .toContain("invalid or expired");
     expect(getSafeAuthErrorMessage(new Error("over_email_send_rate_limit"), "resend"))
