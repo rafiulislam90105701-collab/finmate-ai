@@ -132,7 +132,7 @@ describe("authentication validation", () => {
     const template = readFileSync(new URL("../supabase/templates/recovery.html", import.meta.url), "utf8");
     const callback = readFileSync(new URL("../app/auth/callback/route.ts", import.meta.url), "utf8");
     expect(template).toContain("{{ .Token }}");
-    expect(template).not.toContain("{{ .ConfirmationURL }}");
+    expect(template).toContain("{{ .ConfirmationURL }}");
     expect(callback).toContain('"recovery"');
     expect(callback).toContain("token_hash");
   });
