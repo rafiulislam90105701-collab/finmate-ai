@@ -129,7 +129,9 @@ export function buildDeterministicBudgetStatusAnswer(
   const mentionsBudget = /\bbudgets?\b/.test(lower);
   const asksStatus = /\b(status|overall|all categories|categories|category|limit|allocation|allocated|remaining|left|spent|spending|show|check|list|how much|what|this month|current month)\b/.test(lower);
   const asksForChange = /\b(change|adjust|increase|decrease|reduce|cut|lower|create|update|propose|proposal|recommend|suggest|should i|how can i|what if|scenario|set up|set a budget)\b/.test(lower);
-  if (!mentionsBudget || !asksStatus || asksForChange) return null;
+  // Travel planning can mention a budget without asking about saved allocations.
+  const asksForPlanning = /\b(plan|planning|trip|tour|travel|traveling|travelling|itinerary|destination|accommodation|hotel|sightseeing|transportation|transport|vacation|holiday|traveler|travelers|traveller|travellers|day-by-day|emergency reserve|return home)\b/.test(lower);
+  if (!mentionsBudget || !asksStatus || asksForChange || asksForPlanning) return null;
 
   const parsedMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? new Date(month + "-01T12:00:00Z") : null;
   const monthLabel = parsedMonth && !Number.isNaN(parsedMonth.getTime())

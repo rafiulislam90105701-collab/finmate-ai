@@ -34,6 +34,11 @@ describe("read-only financial assistant tools", () => {
 
 
 
+  it("does not intercept general travel planning just because the prompt mentions a total budget", () => {
+    const question = "I have a total budget of BDT 10,000 for a tour. Help me plan an enjoyable, safe, and affordable trip. Create a practical travel budget for round-trip transportation, accommodation, food, local transport, sightseeing, an emergency reserve, and money I can save. Show a day-by-day itinerary and a clear cost breakdown.";
+    expect(buildDeterministicBudgetStatusAnswer(question, "2026-10", "BDT", ["Food", "Housing", "Travel"], [])).toBeNull();
+  });
+
   it("returns a stable no-budget answer without inventing zero-valued allocations", () => {
     const answer = buildDeterministicBudgetStatusAnswer(
       "Show me my overall budget status for this month, including all categories.",
