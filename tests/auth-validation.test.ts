@@ -216,4 +216,11 @@ describe("authentication validation", () => {
     expect(remainingResendSeconds(100_000, 160_000, 60)).toBe(0);
     expect(remainingResendSeconds(null, 160_000, 60)).toBe(0);
   });
+  it("resumes the recovery form rather than sign-in after Gmail backgrounding", () => {
+    expect(getInitialAuthMode("verify-recovery", false, "sign-in")).toBe("verify-recovery");
+    expect(getInitialAuthMode("verify-recovery", true, "verify")).toBe("verify-recovery");
+    expect(getInitialAuthMode("forgot-password", false, "sign-in")).toBe("reset");
+    expect(authModeQueryValue("verify-recovery")).toBe("verify-recovery");
+  });
+
 });
