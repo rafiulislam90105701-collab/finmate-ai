@@ -180,6 +180,12 @@ describe("authentication validation", () => {
     expect(serviceWorker).toContain('request.mode === "navigate"');
     expect(serviceWorker).toContain("fetch(request).catch(() => caches.match(\"/offline\"))");
     expect(serviceWorker).not.toMatch(/caches\.match\(request\).*navigate/);
+    expect(serviceWorker).toContain('const CACHE = "finmate-shell-v3"');
+    expect(serviceWorker).toContain("self.skipWaiting()");
+    expect(serviceWorker).toContain("caches.open(CACHE).then((cache) => cache.match(request)");
+    const registration = readFileSync(new URL("../components/service-worker-register.tsx", import.meta.url), "utf8");
+    expect(registration).toContain('{ updateViaCache: "none" }');
+    expect(registration).toContain("registration.update()");
   });
 
   it("keeps the local signup confirmation template on the six-digit token path", () => {
