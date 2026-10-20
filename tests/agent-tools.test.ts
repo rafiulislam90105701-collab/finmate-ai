@@ -37,6 +37,41 @@ describe("multi-turn finance tool selection", () => {
   });
 });
 
+
+describe("multi-turn income and category clarification", () => {
+  const userHistory = (...messages: string[]) => messages.map((content) => ({role:"user",content}));
+
+  it("keeps the transaction proposal from an amount-only create request through Income and Salary", () => {
+    expect(selectContextualFinanceToolNames("Add 390tk", [])).toContain("propose_transaction");
+    expect(selectContextualFinanceToolNames("Income", userHistory("Add 390tk"))).toContain("propose_transaction");
+    expect(selectContextualFinanceToolNames("Salary", userHistory("Add 390tk", "Income"))).toContain("propose_transaction");
+  });
+
+  it("keeps an explicitly requested income transaction through a salary category reply", () => {
+    expect(selectContextualFinanceToolNames("Salary", userHistory("Record 390 BDT income", "Income"))).toContain("propose_transaction");
+    expect(selectContextualFinanceToolNames("Salary", userHistory("Add a 390 BDT expense", "Expense"))).toContain("propose_transaction");
+  });
+
+  it("does not turn ordinary income questions into transactions", () => {
+    expect(selectContextualFinanceToolNames("Salary", userHistory("How much income did I record?"))).not.toContain("propose_transaction");
+    expect(selectContextualFinanceToolNames("show my salary", userHistory("Add 390tk", "Income"))).not.toContain("propose_transaction");
+  });
+
+  it("does not reactivate an already saved or canceled action", () => {
+    const saved = [
+      {role:"user",content:"Add 390tk"},
+      {role:"assistant",content:"Confirmed. The server saved your change. The workspace has been refreshed when the connection allowed it."},
+    ];
+    expect(selectContextualFinanceToolNames("Salary", saved)).not.toContain("propose_transaction");
+    expect(selectContextualFinanceToolNames("Salary", userHistory("Add 390tk", "cancel"))).not.toContain("propose_transaction");
+  });
+
+  it("prioritizes an explicit new bill/budget request over the old income action", () => {
+    expect(selectContextualFinanceToolNames("Add a bill of 500tk", userHistory("Add 390tk", "Income"))).toContain("propose_bill");
+    expect(selectContextualFinanceToolNames("Add a budget of 500tk", userHistory("Add 390tk", "Income"))).toContain("propose_budget");
+  });
+});
+
 describe("read-only financial assistant tools", () => {
   it("accepts a valid category-specific budget status argument", () => {
     expect(parseFinanceToolArguments("get_budget_status", '{"category_name":"Food"}')).toEqual({ category_name: "Food" });

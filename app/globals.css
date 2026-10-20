@@ -99,3 +99,6 @@ a { color:inherit; text-decoration:none; }
 
 .proposal-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:10px;margin:12px 0}.proposal-field{display:grid;gap:5px;font-size:12px;font-weight:700;color:var(--ink)}.proposal-field input,.proposal-field select{width:100%;min-width:0;min-height:40px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);font:inherit;font-size:14px}.proposal-field input:disabled,.proposal-field select:disabled{opacity:.72}
 .demo-mode-banner{display:flex;align-items:center;gap:8px;width:fit-content;margin:0 0 14px;padding:8px 11px;border:1px solid #f0d58d;border-radius:9px;background:#fff5d9;color:#72500a;font-size:11px;font-weight:850;letter-spacing:.035em}.demo-mode-banner svg{flex:none}
+
+/* Keep agent-generated proposal summaries readable within narrow mobile chat bubbles. */
+@media (max-width: 640px) { .message-table { min-width: 0; table-layout: fixed; font-size: 11px; } .message-table th, .message-table td { overflow-wrap: anywhere; padding: 5px 4px; } }

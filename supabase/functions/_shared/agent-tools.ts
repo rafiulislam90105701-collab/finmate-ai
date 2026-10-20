@@ -326,10 +326,9 @@ export function selectFinanceToolNames(question: string): string[] {
 }
 
 /**
- * A one-word follow-up ("today", "Transport", "ok add") must retain the
- * most recent financial action's tool availability, not silently fall back to
- * read-only tools.  This only selects allowed tools; it never authorizes writes.
- * Explicit new subjects, questions and cancellations break the old intent.
+ * Preserve an unfinished financial action through short clarification replies.
+ * This only chooses the allowed proposal tool; it never grants write permission.
+ * Chat replies still require a separate user click on Confirm and save.
  */
 export function selectContextualFinanceToolNames(
   question: string,
@@ -338,16 +337,33 @@ export function selectContextualFinanceToolNames(
   const currentTools = selectFinanceToolNames(question);
   const current = question.trim().toLocaleLowerCase("en-US");
   if (!current || /\b(cancel|stop|never\s?mind|forget that|start over)\b|বাদ দাও|বাতিল/.test(current)) return currentTools;
-  // Explicitly introduced topics take priority over any older draft action.
-  if (/\b(bill|bills|electricity|utility|utilities|rent|due|expense|income|transaction|salary|payment|budget|budgets|allocation|limit|savings?|goal|target|forecast|balance|trip|tour|travel)\b|বিল|বিদ্যুৎ|খরচ|বাজেট|সঞ্চয়|সঞ্চয়|ভ্রমণ/.test(current)) return currentTools;
-  // A new standalone question is not consent to keep executing an old draft.
-  if (/^(what|why|how|where|when|show|list|explain|tell me|calculate|compare|check|hello|hi)\b/.test(current)) return currentTools;
-  const previousUserTurns = history.filter((message) => message.role === "user" && typeof message.content === "string").slice(-8);
-  for (let index = previousUserTurns.length - 1; index >= 0; index--) {
-    const previous = previousUserTurns[index].content.trim().toLocaleLowerCase("en-US");
+
+  // Any new explicit write request or independent question takes precedence.
+  if (isFinanceWriteIntent(current)
+    || /^(what|why|how|where|when|show|list|explain|tell me|calculate|compare|check|hello|hi|plan|book)\b/.test(current)
+    || /\b(trip planning|trip itinerary|tour itinerary)\b/.test(current)) return currentTools;
+
+  // "Add 390tk" is a transaction intent even before the user specifies type.
+  // Keep the action proposal-only and ask for income/expense and category.
+  const amountOnlyTransaction = (text: string) =>
+    /\b(add|create|record|log|enter|insert)\b/.test(text)
+    && /\b\d+(?:[.,]\d{1,2})?\s*(?:tk|taka|bdt|usd|eur|gbp|inr)?\b/.test(text)
+    && !/\b(bill|bills|budget|budgets|goal|goals|savings?|trip|tour|travel)\b/.test(text);
+
+  if (amountOnlyTransaction(current)) return ["get_recent_transactions", "propose_transaction"];
+
+  // Walk actual chat context backward, stopping at prior completion, cancellation,
+  // independent questions or another explicit request; never reactivate saved work.
+  for (const message of history.slice(-10).reverse()) {
+    if (typeof message.content !== "string") continue;
+    const previous = message.content.trim().toLocaleLowerCase("en-US");
+    if (message.role === "assistant"
+      && /^(confirmed\. the server saved your change|your change was saved|cancelled the proposed|canceled the proposed)/.test(previous)) break;
+    if (message.role !== "user") continue;
     if (/\b(cancel|stop|never\s?mind|forget that|start over)\b|বাদ দাও|বাতিল/.test(previous)) break;
+    if (/^(what|why|how|where|when|show|list|explain|tell me|calculate|compare|check|plan|book)\b/.test(previous)) break;
     if (isFinanceWriteIntent(previous)) return selectFinanceToolNames(previous);
-    if (/^(what|why|how|where|when|show|list|explain|tell me|calculate|compare|check)\b/.test(previous)) break;
+    if (amountOnlyTransaction(previous)) return ["get_recent_transactions", "propose_transaction"];
   }
   return currentTools;
 }
