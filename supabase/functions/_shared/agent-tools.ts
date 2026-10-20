@@ -301,3 +301,29 @@ export function explainFinancialRisk(input: {
     currency: input.currency,
   };
 }
+
+
+/** Keep Groq's optional function schemas focused on the user's task.
+ * A proposal alone never writes database records. */
+export function selectFinanceToolNames(question: string): string[] {
+  const q = question.toLocaleLowerCase("en-US");
+  const wantsChange = /\b(add|create|make|set|update|change|edit|record|insert|save|log|schedule)\b|যোগ|তৈরি|করো|করতে|সেভ|বানাও/.test(q);
+  const bill = /\b(bill|bills|electricity|utility|utilities|rent|due)\b|বিল|বিদ্যুৎ|বিজলি|বিলের|bidut|biddut/.test(q);
+  const expense = /\b(expense|income|transaction|spent|earning|earned|salary|payment|cost)\b|খরচ|আয়|আয়|বেতন/.test(q);
+  const budget = /\b(budget|budgets|allocation|limit)\b|বাজেট/.test(q);
+  const savings = /\b(savings?|goal|target|emergency fund)\b|সঞ্চয়|সঞ্চয়|লক্ষ্য/.test(q);
+  if (wantsChange) {
+    if (bill) return ["get_upcoming_bills", "propose_bill"];
+    if (budget) return ["get_budget_status", "propose_budget"];
+    if (expense) return ["get_recent_transactions", "propose_transaction"];
+    if (savings) return ["get_savings_goals", "propose_savings_goal"];
+  }
+  if (bill) return ["get_upcoming_bills", "calculate_forecast", "get_financial_summary"];
+  if (budget) return ["get_budget_status", "get_category_spending", "calculate_forecast", "simulate_budget_scenario"];
+  if (expense) return ["get_category_spending", "get_recent_transactions", "get_financial_summary"];
+  if (savings) return ["get_savings_goals", "calculate_forecast", "get_financial_summary"];
+  return ["get_financial_summary", "calculate_forecast", "get_category_spending", "get_upcoming_bills", "explain_financial_risk"];
+}
+export function isFinanceWriteIntent(question: string): boolean {
+  return selectFinanceToolNames(question).some((name) => name.startsWith("propose_"));
+}
