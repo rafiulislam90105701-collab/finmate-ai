@@ -68,6 +68,14 @@ describe("authentication validation", () => {
     expect(pendingEmail).toBe("person@example.com");
   });
 
+  it("does not automatically redirect Home to a stale signup verification flow", () => {
+    const homeResume = readFileSync(new URL("../components/auth-resume-redirect.tsx", import.meta.url), "utf8");
+    expect(homeResume).not.toContain('window.location.replace("/auth?mode=verify-email")');
+    expect(homeResume).toContain('href="/auth?mode=verify-email"');
+    expect(homeResume).toContain('href="/auth?mode=sign-in"');
+    expect(homeResume).toContain("setCanResume(");
+  });
+
   it("resumes a PWA root launch only when pending verification metadata is valid", () => {
     const draft = { mode: "verify" as const, email: "person@example.com", name: "", updatedAt: 2000 };
     expect(shouldResumeVerificationAtRoot(draft, null)).toBe(true);

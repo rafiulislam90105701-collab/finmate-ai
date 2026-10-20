@@ -22,6 +22,7 @@ const tabStorage = {
 /** Resume pending signup verification when an installed PWA is launched at /. */
 export function AuthResumeRedirect() {
   const [storageUnavailable, setStorageUnavailable] = useState(false);
+  const [canResume, setCanResume] = useState(false);
 
   useEffect(() => {
     try {
@@ -34,12 +35,16 @@ export function AuthResumeRedirect() {
     const pendingEmail = readPendingAuthValue(PENDING_EMAIL, persistentStorage, tabStorage);
     const pendingSince = Number(readPendingAuthValue(PENDING_SINCE, persistentStorage, tabStorage));
     const pendingIsFresh = Boolean(pendingEmail && pendingSince > 0 && Date.now() - pendingSince <= AUTH_DRAFT_MAX_AGE_MS);
-    if (shouldResumeVerificationAtRoot(draft, pendingIsFresh ? pendingEmail : null)) {
-      window.location.replace("/auth?mode=verify-email");
-    }
+    // Do not hijack the landing page or the sign-in path. A saved
+    // verification draft is only an offer to resume, not a navigation command.
+    setCanResume(shouldResumeVerificationAtRoot(draft, pendingIsFresh ? pendingEmail : null));
   }, []);
 
-  return storageUnavailable
-    ? <Link href="/auth?mode=verify-email" className="auth-resume-link">Already waiting for a code? Resume email verification</Link>
-    : null;
+  if (!canResume && !storageUnavailable) return null;
+  return <div role="status" className="auth-resume-link">
+    {canResume ? "You have an unfinished signup. " : "Already waiting for an email code? "}
+    <Link href="/auth?mode=verify-email">Resume verification</Link>
+    {" · "}
+    <Link href="/auth?mode=sign-in">Sign in instead</Link>
+  </div>;
 }
