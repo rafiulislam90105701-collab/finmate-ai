@@ -1,7 +1,7 @@
 // Deploy with: supabase functions deploy finance-assistant
 // This function deliberately uses the caller JWT and RLS—not the service role—to scope all data.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.117.3";
-import { BUDGET_STATUS_TOOL_SCHEMA, buildDeterministicBudgetStatusAnswer, buildGroqFailureLog, explainFinancialRisk, filterBudgetStatus, parseFinanceToolArguments, simulateBudgetScenario } from "../_shared/agent-tools.ts";
+import { BUDGET_STATUS_TOOL_SCHEMA, buildDeterministicBudgetStatusAnswer, buildGroqFailureLog, explainFinancialRisk, filterBudgetStatus, parseFinanceToolArguments, selectFinanceToolNames, isFinanceWriteIntent, simulateBudgetScenario } from "../_shared/agent-tools.ts";
 import { actionSchema, parseActionProposal } from "../_shared/financial-actions.ts";
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
@@ -111,6 +111,8 @@ Deno.serve(async (request) => {
       ["propose_savings_goal", "Propose creating or updating a savings goal. Never save it; ask for any missing required details first. For updates, copy id and updated_at from get_savings_goals. Amounts use integer minor units."],
     ].map(([name, description]) => ({ name, description, ...actionSchema(name as string)! })),
   ].map(({name,description,properties,required}) => ({type:"function",function:{name,description,parameters:{type:"object",properties:properties ?? {},...(required ? {required} : {}),additionalProperties:false}}}));
+  const relevantToolNames = new Set(selectFinanceToolNames(question));
+  const scopedDefinitions = (definitions as unknown as Array<{type:string;function:{name:string}}>).filter((tool) => relevantToolNames.has(tool.function.name));
   const executeTool = (name:string,args:Record<string,unknown>):unknown => {
     const categoryFilter = typeof args.category_name==="string" ? args.category_name.trim().toLocaleLowerCase("en-US") : "";
     const limit = typeof args.limit==="number" ? args.limit : 10;
@@ -136,13 +138,30 @@ Deno.serve(async (request) => {
   let pendingAction: Record<string, unknown> | undefined;
   try {
     for (let turn=0;turn<2;turn+=1) {
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},body:JSON.stringify({model:"openai/gpt-oss-120b",messages,tools:definitions,tool_choice:turn===0?"auto":"none",parallel_tool_calls:false,max_completion_tokens:1400,reasoning_effort:"low"}),signal:AbortSignal.timeout(12_000)});
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${key}`},body:JSON.stringify({model:"openai/gpt-oss-120b",messages,tools:scopedDefinitions,tool_choice:turn===0?"auto":"none",parallel_tool_calls:false,max_completion_tokens:950,reasoning_effort:"low"}),signal:AbortSignal.timeout(12_000)});
       if (!response.ok) {
         const providerPayload = await response.json().catch(() => null);
         const payloadObject = providerPayload && typeof providerPayload === "object" ? providerPayload as Record<string, unknown> : {};
         const groqMetadata = payloadObject.x_groq && typeof payloadObject.x_groq === "object" ? payloadObject.x_groq as Record<string, unknown> : {};
         const requestId = response.headers.get("x-request-id") ?? response.headers.get("x-groq-request-id") ?? (typeof groqMetadata.id === "string" ? groqMetadata.id : null);
         console.error(JSON.stringify(buildGroqFailureLog(response.status, requestId, providerPayload)));
+        // A malformed model tool call is not a database error. Try once
+        // without tools for read-only questions; never retry on 429 or
+        // incorrectly claim a proposed write was saved.
+        const providerError = payloadObject.error && typeof payloadObject.error === "object"
+          ? payloadObject.error as Record<string, unknown> : {};
+        if (response.status === 400 && providerError.code === "tool_use_failed" && !isFinanceWriteIntent(question) && turn === 0) {
+          try {
+            const reducedSystem = "You are FinMate AI. Answer using ONLY supplied recorded figures; if insufficient, say so. Amounts are integer minor units (divide by 100 for display). Never claim any financial record was changed. Label estimates.";
+            const groundedSnapshot = {month,currency:profile.currency,availableMinor:available,incomeMinor:income,expensesMinor:paid,unpaidBillsMinor:unpaidMinor,expectedRemainingMinor:expected,projectedMinor:projected,categorySpending:categorySpending.slice(0,12),budgets:budgetStatus.slice(0,12),upcomingBills:upcomingBills.slice(0,8).map(({name,amountMinor,dueDate}) => ({name,amountMinor,dueDate}))};
+            const recoveryResponse = await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${key}`},body:JSON.stringify({model:"openai/gpt-oss-120b",messages:[{role:"system",content:reducedSystem},{role:"user",content:JSON.stringify({question,recorded:groundedSnapshot})}],tool_choice:"none",max_completion_tokens:420,reasoning_effort:"low"}),signal:AbortSignal.timeout(7000)});
+            if (recoveryResponse.ok) {
+              const recoveryPayload = await recoveryResponse.json();
+              const recoveryAnswer = recoveryPayload?.choices?.[0]?.message?.content;
+              if (typeof recoveryAnswer === "string" && recoveryAnswer.trim()) return json({mode:"ai",providerStatus:"recovered-without-tools",answer:recoveryAnswer.trim().slice(0,2400)});
+            }
+          } catch { /* Keep grounded deterministic fallback. */ }
+        }
         return json({mode:"rules",providerStatus:response.status===429?"rate-limited":"unavailable",answer:fallback,...(pendingAction?{pendingAction}:{})});
       }
       const payload = await response.json(); const message = payload?.choices?.[0]?.message;
