@@ -62,8 +62,12 @@ export default function AuthPage() {
       } else if (pendingEmail && !pendingSince) {
         writePendingAuthValue(PENDING_SINCE, String(Date.now()), localStorage, sessionStorage);
       }
-      const savedEmail = pendingEmail || draft?.email || "";
       const initialMode = getInitialAuthMode(params.get("error") === "callback" ? "sign-in" : params.get("mode"), Boolean(pendingEmail), draft?.mode);
+      // Entering sign-in explicitly should never borrow a different user's
+      // pending-signup email from the browser's persisted resume metadata.
+      const savedEmail = initialMode === "sign-in"
+        ? (draft?.mode === "sign-in" ? draft.email : "")
+        : pendingEmail || draft?.email || "";
       const restoredUrl = new URL(window.location.href);
       restoredUrl.searchParams.set("mode", authModeQueryValue(initialMode));
       window.history.replaceState(window.history.state, "", restoredUrl);
