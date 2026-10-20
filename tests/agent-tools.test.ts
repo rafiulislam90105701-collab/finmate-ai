@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BUDGET_STATUS_TOOL_SCHEMA, buildDeterministicBudgetStatusAnswer, buildGroqFailureLog, explainFinancialRisk, filterBudgetStatus, parseFinanceToolArguments, simulateBudgetScenario } from "../supabase/functions/_shared/agent-tools";
+import { BUDGET_STATUS_TOOL_SCHEMA, buildDeterministicBudgetStatusAnswer, buildGroqFailureLog, explainFinancialRisk, filterBudgetStatus, isFinanceWriteIntent, parseFinanceToolArguments, selectFinanceToolNames, simulateBudgetScenario } from "../supabase/functions/_shared/agent-tools";
 import { buildInsights } from "@/lib/insights";
 import { calculateForecast } from "@/lib/finance";
 import type { FinanceState } from "@/types/finance";
@@ -202,4 +202,15 @@ describe("read-only financial assistant tools", () => {
     expect(insights[0]).toMatchObject({ title: "Food budget pressure", tone: "warning" });
     expect(insights[0].body).toContain("above the");
   });
+  it("limits Groq tools to the financial question and keeps actions behind consent", () => {
+    expect(selectFinanceToolNames("Add a monthly electricity bill of 1200 BDT")).toEqual(["get_upcoming_bills", "propose_bill"]);
+    expect(selectFinanceToolNames("Create my Food budget of 5000 taka")).toEqual(["get_budget_status", "propose_budget"]);
+    expect(selectFinanceToolNames("Record a 200 BDT travel expense")).toEqual(["get_recent_transactions", "propose_transaction"]);
+    expect(selectFinanceToolNames("Create an emergency savings goal")).toEqual(["get_savings_goals", "propose_savings_goal"]);
+    expect(selectFinanceToolNames("How much did I spend on Food?")).not.toContain("propose_transaction");
+    expect(selectFinanceToolNames("How are my upcoming bills affecting the forecast?")).toContain("calculate_forecast");
+    expect(isFinanceWriteIntent("Add electricity bill")).toBe(true);
+    expect(isFinanceWriteIntent("Summarize my bills")).toBe(false);
+  });
+
 });
