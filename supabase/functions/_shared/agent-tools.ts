@@ -324,6 +324,34 @@ export function selectFinanceToolNames(question: string): string[] {
   if (savings) return ["get_savings_goals", "calculate_forecast", "get_financial_summary"];
   return ["get_financial_summary", "calculate_forecast", "get_category_spending", "get_upcoming_bills", "explain_financial_risk"];
 }
+
+/**
+ * A one-word follow-up ("today", "Transport", "ok add") must retain the
+ * most recent financial action's tool availability, not silently fall back to
+ * read-only tools.  This only selects allowed tools; it never authorizes writes.
+ * Explicit new subjects, questions and cancellations break the old intent.
+ */
+export function selectContextualFinanceToolNames(
+  question: string,
+  history: Array<{ role: string; content: string }>,
+): string[] {
+  const currentTools = selectFinanceToolNames(question);
+  const current = question.trim().toLocaleLowerCase("en-US");
+  if (!current || /\b(cancel|stop|never\s?mind|forget that|start over)\b|বাদ দাও|বাতিল/.test(current)) return currentTools;
+  // Explicitly introduced topics take priority over any older draft action.
+  if (/\b(bill|bills|electricity|utility|utilities|rent|due|expense|income|transaction|salary|payment|budget|budgets|allocation|limit|savings?|goal|target|forecast|balance|trip|tour|travel)\b|বিল|বিদ্যুৎ|খরচ|বাজেট|সঞ্চয়|সঞ্চয়|ভ্রমণ/.test(current)) return currentTools;
+  // A new standalone question is not consent to keep executing an old draft.
+  if (/^(what|why|how|where|when|show|list|explain|tell me|calculate|compare|check|hello|hi)\b/.test(current)) return currentTools;
+  const previousUserTurns = history.filter((message) => message.role === "user" && typeof message.content === "string").slice(-8);
+  for (let index = previousUserTurns.length - 1; index >= 0; index--) {
+    const previous = previousUserTurns[index].content.trim().toLocaleLowerCase("en-US");
+    if (/\b(cancel|stop|never\s?mind|forget that|start over)\b|বাদ দাও|বাতিল/.test(previous)) break;
+    if (isFinanceWriteIntent(previous)) return selectFinanceToolNames(previous);
+    if (/^(what|why|how|where|when|show|list|explain|tell me|calculate|compare|check)\b/.test(previous)) break;
+  }
+  return currentTools;
+}
+
 export function isFinanceWriteIntent(question: string): boolean {
   return selectFinanceToolNames(question).some((name) => name.startsWith("propose_"));
 }

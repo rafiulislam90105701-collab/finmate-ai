@@ -1,10 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { BUDGET_STATUS_TOOL_SCHEMA, buildDeterministicBudgetStatusAnswer, buildGroqFailureLog, explainFinancialRisk, filterBudgetStatus, isFinanceWriteIntent, parseFinanceToolArguments, selectFinanceToolNames, simulateBudgetScenario } from "../supabase/functions/_shared/agent-tools";
+import { BUDGET_STATUS_TOOL_SCHEMA, buildDeterministicBudgetStatusAnswer, buildGroqFailureLog, explainFinancialRisk, filterBudgetStatus, isFinanceWriteIntent, parseFinanceToolArguments, selectFinanceToolNames, selectContextualFinanceToolNames, simulateBudgetScenario } from "../supabase/functions/_shared/agent-tools";
 import { buildInsights } from "@/lib/insights";
 import { calculateForecast } from "@/lib/finance";
 import type { FinanceState } from "@/types/finance";
 
 const categories = [{ id: "food", name: "Food" }, { id: "travel", name: "Travel" }];
+
+
+describe("multi-turn finance tool selection", () => {
+  const history = (messages: string[]) => messages.map((content) => ({role: "user", content}));
+
+  it("keeps the budget proposal tool through month, category and confirmation follow-ups", () => {
+    const initial = ["add budget 400"];
+    expect(selectContextualFinanceToolNames("this month today", history(initial))).toContain("propose_budget");
+    expect(selectContextualFinanceToolNames("transport", history([...initial, "this month today"]))).toContain("propose_budget");
+    expect(selectContextualFinanceToolNames("ok add", history([...initial, "this month today", "transport"]))).toContain("propose_budget");
+  });
+
+  it("keeps a bill proposal after the requested due date is supplied", () => {
+    expect(selectContextualFinanceToolNames("today", history(["add electricity 500tk"]))).toContain("propose_bill");
+  });
+
+  it("never carries an old draft into an explicit new question or cancellation", () => {
+    const previous = history(["add budget 400", "transport"]);
+    expect(selectContextualFinanceToolNames("show my bills", previous)).not.toContain("propose_budget");
+    expect(selectContextualFinanceToolNames("cancel", previous)).not.toContain("propose_budget");
+    expect(selectContextualFinanceToolNames("plan a trip", previous)).not.toContain("propose_budget");
+    expect(selectContextualFinanceToolNames("how much did I spend?", previous)).not.toContain("propose_budget");
+    expect(selectContextualFinanceToolNames("add electricity 500tk", previous)).toContain("propose_bill");
+    expect(selectContextualFinanceToolNames("add electricity 500tk", previous)).not.toContain("propose_budget");
+  });
+
+  it("does not give write tools to an unrelated new conversation", () => {
+    expect(selectContextualFinanceToolNames("transport", [])).not.toContain("propose_budget");
+    expect(selectContextualFinanceToolNames("today", history(["hello"]))).not.toContain("propose_bill");
+  });
+});
 
 describe("read-only financial assistant tools", () => {
   it("accepts a valid category-specific budget status argument", () => {
