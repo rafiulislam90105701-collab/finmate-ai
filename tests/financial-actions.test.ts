@@ -95,4 +95,50 @@ describe("confirmed financial actions", () => {
     ];
     for (const request of requests) expect(await executeConfirmedAction(store, userId, request)).toMatchObject({ success:true, duplicate:false });
   });
+  it("preserves explicitly approved transaction, bill, and savings-goal fields instead of replacing them with defaults", async () => {
+    const requests = [
+      {
+        request_id: "22222222-2222-4222-8222-222222222222",
+        entity: "transaction" as const, operation: "create" as const,
+        fields: { type: "expense", amount_minor: 120000, description: "Bus", category_name: "Food", transaction_date: "2026-10-20", recurring: "weekly", account: "Cash", notes: "Weekday travel" },
+        expected: { recurring: "weekly", account: "Cash", notes: "Weekday travel" },
+      },
+      {
+        request_id: "33333333-3333-4333-8333-333333333333",
+        entity: "bill" as const, operation: "create" as const,
+        fields: { name: "Electricity", amount_minor: 120000, category_name: "Food", due_date: "2026-10-27", recurring: "monthly" },
+        expected: { recurring: "monthly" },
+      },
+      {
+        request_id: "44444444-4444-4444-8444-444444444444",
+        entity: "savings_goal" as const, operation: "create" as const,
+        fields: { name: "Emergency fund", target_minor: 200000, target_date: "2027-01-20", color: "#abcdef" },
+        expected: { target_date: "2027-01-20", color: "#abcdef" },
+      },
+    ];
+    for (const request of requests) {
+      let inserted: Record<string, unknown> | null = null;
+      const store: ActionStore = {
+        ...memoryStore(),
+        async insert(_table, row) { inserted = row; return { id: row.id }; },
+      };
+      expect(await executeConfirmedAction(store, userId, request)).toMatchObject({ success: true, id: request.request_id });
+      expect(inserted).toMatchObject(request.expected);
+    }
+  });
+
+  it("sets safe defaults only when approved optional fields are omitted", async () => {
+    let inserted: Record<string, unknown> | null = null;
+    const store: ActionStore = {
+      ...memoryStore(),
+      async insert(_table, row) { inserted = row; return { id: row.id }; },
+    };
+    await executeConfirmedAction(store, userId, {
+      request_id: "55555555-5555-4555-8555-555555555555",
+      entity: "bill", operation: "create",
+      fields: { name: "Electricity", amount_minor: 120000, category_name: "Food", due_date: "2026-10-27" },
+    });
+    expect(inserted).toMatchObject({ recurring: "none" });
+  });
+
 });

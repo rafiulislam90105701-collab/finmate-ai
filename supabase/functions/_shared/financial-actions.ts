@@ -115,9 +115,15 @@ export async function executeConfirmedAction(store: ActionStore, userId: string,
   if (request.operation === "create") {
     if (definition.required.some((key) => !(key in source))) throw new Error("Required fields are missing");
     row.id = request.request_id;
-    if (request.entity === "transaction") Object.assign(row, { account: null, notes: null, recurring: "none" });
-    if (request.entity === "bill") Object.assign(row, { recurring: "none" });
-    if (request.entity === "savings_goal") Object.assign(row, { target_date: null, color: "#4978d6" });
+    // Defaults must never overwrite values explicitly reviewed and approved by the user.
+    const defaults: Record<string, unknown> =
+      request.entity === "transaction" ? { account: null, notes: null, recurring: "none" }
+      : request.entity === "bill" ? { recurring: "none" }
+      : request.entity === "savings_goal" ? { target_date: null, color: "#4978d6" }
+      : {};
+    for (const [key, value] of Object.entries(defaults)) {
+      if (!(key in row)) row[key] = value;
+    }
     const existing = await store.getOwnedRecord(table, request.request_id, userId);
     if (existing) {
       const equivalent = Object.entries(row).every(([key, value]) => key in existing && (typeof value === "number" ? Number(existing[key]) === value : existing[key] === value));

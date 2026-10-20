@@ -59,10 +59,28 @@ Deno.serve(async (request) => {
     const result = await executeConfirmedAction(store, user.id, action as unknown as FinancialActionRequest);
     return json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "";
+    // Supabase/PostgREST errors are structured objects and are not always instanceof Error.
+    // Classify only allowlisted error codes and messages; never log raw SQL or user data.
+    const details = error && typeof error === "object" ? error as Record<string, unknown> : {};
+    const message = typeof details.message === "string" ? details.message : "";
+    const code = typeof details.code === "string" ? details.code : "";
     const safeKnown = ["Invalid action request", "Invalid action fields", "Required fields are missing", "Current record id and update timestamp are required", "Category not found in your workspace", "Record not found in your workspace", "A paid bill cannot be updated", "A bill-linked transaction cannot be updated directly", "This confirmation was already used with different details", "This record changed since the proposal. Refresh and ask again.", "This record changed or is no longer available. Refresh and ask again."];
-    console.error(JSON.stringify({ event: "finance_action_failed", entity: action.entity, operation: action.operation, request_id: action.request_id, error_type: error instanceof Error ? error.name : "unknown" }));
-    const conflict = message.includes("already used") || /duplicate key|unique constraint/i.test(message);
-    return json({ error: safeKnown.includes(message) ? message : conflict ? "A matching financial record already exists. Refresh and review your workspace." : "The change was not saved. Refresh your workspace and try again." }, conflict || /record changed/i.test(message) ? 409 : safeKnown.includes(message) ? 400 : 500);
+    const constraint = ["23505", "23503", "23514", "23502"].includes(code);
+    const conflict = code === "23505" || message.includes("already used") || /duplicate key|unique constraint/i.test(message);
+    const validation = safeKnown.includes(message);
+    const reason = code === "23505" ? "duplicate_record"
+      : code === "23503" ? "invalid_reference"
+      : code === "23514" || code === "23502" ? "constraint_violation"
+      : code === "42501" ? "permission_denied"
+      : validation ? "validation" : "unexpected_error";
+    console.error(JSON.stringify({ event: "finance_action_failed", entity: action.entity, operation: action.operation, request_id: action.request_id, reason, ...(constraint || code === "42501" ? { db_code: code } : {}) }));
+    const publicError = validation ? message
+      : conflict && action.entity === "budget" ? "A budget already exists for that category and month. Refresh and propose an update instead."
+      : conflict ? "A matching financial record already exists. Refresh and review your workspace."
+      : code === "23503" ? "The selected category or related record is not available in your workspace. Refresh and choose an existing category."
+      : code === "23514" || code === "23502" ? "The proposed values were rejected. Review the amount, date, and category."
+      : code === "42501" ? "Your account does not have permission to save this change. Sign in again and check your email verification."
+      : "The change was not saved. Refresh your workspace and try again.";
+    return json({ error: publicError }, conflict || /record changed/i.test(message) ? 409 : validation || constraint ? 400 : code === "42501" ? 403 : 500);
   }
 });
